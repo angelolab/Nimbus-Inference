@@ -7,8 +7,8 @@ permissions:
   contents: read # to fetch code (actions/checkout)
 
 jobs:
-  build_wheels:
-    name: Pure Python Wheels
+  build:
+    name: Wheels and Source Distribution
     runs-on: ubuntu-latest
     strategy:
       # Ensure that a wheel builder finishes even if another fails
@@ -20,33 +20,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build Wheels
-        run: pipx run build --wheel
+      - name: Build Wheels and Source Distribution
+        run: pipx run build --wheel --sdist
 
-      - name: Check Wheel Metadata
-        run: pipx run twine check dist/*.whl
-
-      - name: Store Wheel Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: distributions
-          path: dist/*.whl
-
-  build_sdist:
-    name: Source Distribution
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout ${{ github.repository }}
-        uses: actions/checkout@v4
-
-      - name: Build sdist
-        run: pipx run build --sdist
-
-      - name: Check sdist Metadata
+      - name: Check Metadata
         run: pipx run twine check dist/*
 
-      - name: Store sdist Artifacts
+      - name: Store Wheel and Source Distribution Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: distributions
-          path: dist/*.tar.gz
+          path: dist/*
