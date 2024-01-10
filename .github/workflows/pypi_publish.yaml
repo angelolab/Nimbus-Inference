@@ -26,6 +26,8 @@ jobs:
   build_wheels_sdist:
     needs: [test]
     name: Build
+    permissions:
+      contents: read
     uses: ./.github/workflows/build.yaml
     secrets: inherit
 
