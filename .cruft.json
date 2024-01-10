@@ -1,0 +1,28 @@
+{
+  "template": "https://github.com/scverse/cookiecutter-scverse",
+  "commit": "6a1f5a101d3de6ef0c48821eaaa00d078ad223a1",
+  "checkout": null,
+  "context": {
+    "cookiecutter": {
+      "project_name": "Nimbus-Inference",
+      "package_name": "nimbus_inference",
+      "project_description": "A very interesting piece of code",
+      "author_full_name": "Lorenz Rumberger",
+      "author_email": "jlrumber@stanford.edu",
+      "github_user": "angelolab",
+      "project_repo": "https://github.com/angelolab/Nimbus-Inference",
+      "license": "MIT License",
+      "_copy_without_render": [
+        ".github/workflows/**.yaml",
+        "docs/_templates/autosummary/**.rst"
+      ],
+      "_render_devdocs": false,
+      "_jinja2_env_vars": {
+        "lstrip_blocks": true,
+        "trim_blocks": true
+      },
+      "_template": "https://github.com/scverse/cookiecutter-scverse"
+    }
+  },
+  "directory": null
+}
