@@ -8,13 +8,11 @@ permissions:
 
 jobs:
   build_wheels:
-    name: ${{ matrix.os }} Wheels
-    runs-on: ${{ matrix.os }}
+    name: Pure Python Wheels
+    runs-on: ubuntu-latest
     strategy:
       # Ensure that a wheel builder finishes even if another fails
       fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
       - name: Checkout ${{ github.repository }}
@@ -22,24 +20,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up QEMU (For Linux ARM)
-        if: runner.os == 'Linux'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - name: Build Wheels
-        uses: pypa/cibuildwheel@v2.16.2
-        with:
-          package-dir: .
-          output-dir: wheelhouse
-          config-file: "{package}/pyproject.toml"
+        run: pipx run build --wheel
+
+      - name: Check Wheel Metadata
+        run: pipx run twine check dist/*.whl
 
       - name: Store Wheel Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: distributions
-          path: wheelhouse/*.whl
+          path: dist/*.whl
 
   build_sdist:
     name: Source Distribution
