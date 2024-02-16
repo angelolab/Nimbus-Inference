@@ -28,7 +28,7 @@ class Pad2D(nn.Module):
             return nn.functional.pad(x, self.padding, mode=self.mode)
 
 
-def maybe_crop(x, target_shape, data_format):
+def maybe_crop(x, target_shape, data_format="channels_first"):
     """Center crops x to target_shape if necessary.
     Args:
         x: input tensor
@@ -86,7 +86,7 @@ class ConvBlock(nn.Module):
             in_ch = kwargs.get('in_channels', 2)
         self.activation=getattr(nn, activation)()
         filters = _get_filter_count(layer_idx, filters_root)
-        self.padding_layer = Pad2D(padding=(1, 1), mode=padding)
+        self.padding_layer = Pad2D(padding=(1, 1), mode=self.padding)
 
         if up:
             self.conv2d_0 = nn.Conv2d(
@@ -121,7 +121,7 @@ class ConvBlock(nn.Module):
         x = self.bn_2(x)
         x = self.activation(x)
         if self.padding == "valid":
-            skip = maybe_crop(skip, x.size(), self.data_format)
+            skip = maybe_crop(skip, x.size())
         x = x + skip
         return x
 
@@ -151,7 +151,7 @@ class UpconvBlock(nn.Module):
         self.activation=activation
 
         filters = _get_filter_count(layer_idx, filters_root)
-        self.padding_layer = Pad2D(padding=(1, 1), mode=padding)
+        self.padding_layer = Pad2D(padding=(1, 1), mode=self.padding)
         self.upconv = nn.ConvTranspose2d(
             in_channels=filters, out_channels=filters // 2,
             kernel_size=pool_size, stride=pool_size, padding=0
@@ -211,28 +211,29 @@ class UNet(nn.Module):
         self.layer_depth = layer_depth
         self.contracting_layers = nn.ModuleList()
         self.expanding_layers = nn.ModuleList()
+        self.padding = padding
 
         for layer_idx in range(layer_depth-1):
             conv_block = ConvBlock(
                 layer_idx = layer_idx, filters_root=filters_root, kernel_size=kernel_size,
-                padding=padding, activation=activation)
+                padding=self.padding, activation=activation)
             self.contracting_layers.append(conv_block)
             self.contracting_layers.append(
                 nn.MaxPool2d(kernel_size=(pool_size, pool_size))
             )
         self.bottle_neck = ConvBlock(
         layer_idx=layer_idx+1, filters_root=filters_root, kernel_size=kernel_size,
-        padding=padding, activation=activation
+        padding=self.padding, activation=activation
         )
         for layer_idx in range(layer_depth-2, -1, -1):
             upconv_block = UpconvBlock(
                 layer_idx=layer_idx+1, filters_root=filters_root, kernel_size=kernel_size,
-                padding=padding, activation=activation, pool_size=(pool_size, pool_size)
+                padding=self.padding, activation=activation, pool_size=(pool_size, pool_size)
             )
             crop_concat_block = CropConcatBlock()
             conv_block = ConvBlock(
             layer_idx=layer_idx, filters_root=filters_root, kernel_size=kernel_size,
-            padding=padding, activation=activation, up=True
+            padding=self.padding, activation=activation, up=True
             )
             self.expanding_layers += [upconv_block, crop_concat_block, conv_block]
 
