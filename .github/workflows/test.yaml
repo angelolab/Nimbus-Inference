@@ -35,7 +35,7 @@ jobs:
 
       - name: Run Tests
         run: |
-          pytest
+          python -m pytest
 
       - name: Archive Coverage
         uses: actions/upload-artifact@v4

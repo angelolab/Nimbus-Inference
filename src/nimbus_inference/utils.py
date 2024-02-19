@@ -9,6 +9,7 @@ from skimage import io
 from tqdm.autonotebook import tqdm
 from joblib import Parallel, delayed
 from skimage.segmentation import find_boundaries
+from skimage.measure import regionprops_table
 
 
 def calculate_normalization(channel_path, quantile):
@@ -85,7 +86,7 @@ def prepare_input_data(mplex_img, instance_mask):
     """
     edge = find_boundaries(instance_mask, mode="inner").astype(np.uint8)
     binary_mask = np.logical_and(edge == 0, instance_mask > 0).astype(np.float32)
-    input_data = np.stack([mplex_img, binary_mask], axis=-1)[np.newaxis,...] # bhwc
+    input_data = np.stack([mplex_img, binary_mask], axis=0)[np.newaxis,...] # bhwc
     return input_data
 
 
@@ -98,15 +99,11 @@ def segment_mean(instance_mask, prediction):
         uniques (np.array): unique instance ids
         mean_per_cell (np.array): mean prediction per instance
     """
-    instance_mask_flat = tf.cast(tf.reshape(instance_mask, -1), tf.int32)  # (h*w)
-    pred_flat = tf.cast(tf.reshape(prediction, -1), tf.float32)
-    sort_order = tf.argsort(instance_mask_flat)
-    instance_mask_flat = tf.gather(instance_mask_flat, sort_order)
-    uniques, _ = tf.unique(instance_mask_flat)
-    pred_flat = tf.gather(pred_flat, sort_order)
-    mean_per_cell = tf.math.segment_mean(pred_flat, instance_mask_flat)
-    mean_per_cell = tf.gather(mean_per_cell, uniques)
-    return [uniques.numpy()[1:], mean_per_cell.numpy()[1:]] # discard background
+    props_df = regionprops_table(
+        label_image=instance_mask, intensity_image=prediction,
+        properties=['label' ,'intensity_mean']
+    )
+    return props_df
 
 
 def test_time_aug(
@@ -126,10 +123,12 @@ def test_time_aug(
     """
     forward_augmentations = []
     backward_augmentations = []
+    if not isinstance(input_data, torch.Tensor):
+        input_data = torch.tensor(input_data)
     if rotate:
         for k in [0,1,2,3]:
-            forward_augmentations.append(lambda x: torch.rot90(x, k=k))
-            backward_augmentations.append(lambda x: torch.rot90(x, k=-k))
+            forward_augmentations.append(lambda x: torch.rot90(x, k=k, dims=[2,3]))
+            backward_augmentations.append(lambda x: torch.rot90(x, k=-k, dims=[2,3]))
     if flip:
         forward_augmentations += [
             lambda x: torch.flip(x, [2]),
@@ -144,21 +143,21 @@ def test_time_aug(
         input_data_tmp = forw_aug(input_data).numpy() # bhwc
         input_batch.append(np.concatenate(input_data_tmp))
     input_batch = np.stack(input_batch, 0)
-    seg_map = app._predict_segmentation(
+    seg_map = app.predict_segmentation(
         input_batch,
-        batch_size=batch_size,
         preprocess_kwargs={
             "normalize": True,
             "marker": channel,
             "normalization_dict": normalization_dict},
         )
+    seg_map = torch.from_numpy(seg_map)
     tmp = []
     for backw_aug, seg_map_tmp in zip(backward_augmentations, seg_map):
         seg_map_tmp = backw_aug(seg_map_tmp[np.newaxis,...])
         seg_map_tmp = np.squeeze(seg_map_tmp)
         tmp.append(seg_map_tmp)
-    seg_map = np.stack(tmp, -1)
-    seg_map = np.mean(seg_map, axis = -1, keepdims = True)
+    seg_map = np.stack(tmp, 0)
+    seg_map = np.mean(seg_map, axis = 0)
     return seg_map
 
 
@@ -188,11 +187,13 @@ def predict_fovs(
         out_fov_path = os.path.join(
             os.path.normpath(output_dir), os.path.basename(fov_path)
         )
-        fov_dict = {}
+        df_fov = pd.DataFrame()
         for channel in os.listdir(fov_path):
             channel_path = os.path.join(fov_path, channel)
             channel_ = channel.split(".")[0]
-            if not channel.endswith(suffix) or channel not in include_channels:
+            if not channel.endswith(suffix) or (
+                include_channels != [] and channel_ not in include_channels
+                ):
                 continue
             mplex_img = np.squeeze(io.imread(channel_path))
             instance_path = segmentation_naming_convention(fov_path)
@@ -201,12 +202,12 @@ def predict_fovs(
             if half_resolution:
                 scale = 0.5
                 input_data = np.squeeze(input_data)
-                h,w,_ = input_data.shape
-                img = cv2.resize(input_data[...,0], [int(h*scale), int(w*scale)])
+                _, h,w = input_data.shape
+                img = cv2.resize(input_data[0], [int(h*scale), int(w*scale)])
                 binary_mask = cv2.resize(
-                    input_data[...,1], [int(h*scale), int(w*scale)], interpolation=0
+                    input_data[1], [int(h*scale), int(w*scale)], interpolation=0
                 )
-                input_data = np.stack([img, binary_mask], axis=-1)[np.newaxis,...]
+                input_data = np.stack([img, binary_mask], axis=0)[np.newaxis,...]
             if test_time_augmentation:
                 prediction = test_time_aug(
                     input_data, channel, nimbus, normalization_dict, batch_size=batch_size
@@ -223,20 +224,19 @@ def predict_fovs(
             prediction = np.squeeze(prediction)
             if half_resolution:
                 prediction = cv2.resize(prediction, (h, w))
-            instance_mask = np.expand_dims(instance_mask, axis=-1)
-            labels, mean_per_cell = segment_mean(instance_mask, prediction)
-            if "label" not in fov_dict.keys():
-                fov_dict["fov"] = [os.path.basename(fov_path)]*len(labels)
-                fov_dict["label"] = labels
-            fov_dict[channel+"_pred"] = mean_per_cell
+            df = pd.DataFrame(segment_mean(instance_mask, prediction))
+            if df_fov.empty:
+                df_fov["label"] = df["label"]
+                df_fov["fov"] = os.path.basename(fov_path)
+            df_fov[channel.split(".")[0]] = df["intensity_mean"]
             if save_predictions:
                 os.makedirs(out_fov_path, exist_ok=True)
-                pred_int = tf.cast(prediction*255.0, tf.uint8).numpy()
+                pred_int = (prediction*255.0).astype(np.uint8)
                 io.imsave(
-                    os.path.join(out_fov_path, channel+".tiff"), pred_int,
+                    os.path.join(out_fov_path, channel), pred_int,
                     photometric="minisblack", compression="zlib"
                 )
-        fov_dict_list.append(pd.DataFrame(fov_dict))
+        fov_dict_list.append(df_fov)
     cell_table = pd.concat(fov_dict_list, ignore_index=True)
     return cell_table
 

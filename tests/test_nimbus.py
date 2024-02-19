@@ -1,4 +1,4 @@
-from test_dataset import prepare_ome_tif_data, prepare_tif_data
+from tests.test_utils import prepare_ome_tif_data, prepare_tif_data
 import tempfile
 from nimbus_inference.nimbus import Nimbus, prep_naming_convention
 from nimbus_inference.unet import UNet
@@ -13,14 +13,26 @@ def test_check_inputs():
     with tempfile.TemporaryDirectory() as temp_dir:
         num_samples = 5
         selected_markers = ["CD45", "CD3", "CD8", "ChyTr"]
-        fov_paths = prepare_tif_data(num_samples, temp_dir, selected_markers)
+        fov_paths, _ = prepare_tif_data(num_samples, temp_dir, selected_markers)
         naming_convention = prep_naming_convention(os.path.join(temp_dir, "deepcell_output"))
         nimbus = Nimbus(
-            fov_paths=[temp_dir], segmentation_naming_convention=naming_convention, output_dir=temp_dir
+            fov_paths=fov_paths, segmentation_naming_convention=naming_convention,
+            output_dir=temp_dir
         )
         nimbus.check_inputs()
-        # check if the model is initialized
-        assert isinstance(nimbus.model, UNet)
+
+
+def test_initialize_model():
+    nimbus = Nimbus(
+        fov_paths=[""], segmentation_naming_convention="", output_dir="",
+        input_shape=[512,512], batch_size=4
+    )
+    nimbus.initialize_model(padding="valid")
+    assert isinstance(nimbus.model, UNet)
+    assert nimbus.model.padding == "valid"
+    nimbus.initialize_model(padding="reflect")
+    assert isinstance(nimbus.model, UNet)
+    assert nimbus.model.padding == "reflect"
 
 
 def test_prepare_normalization_dict():
@@ -29,7 +41,7 @@ def test_prepare_normalization_dict():
 
         num_samples = 5
         selected_markers = ["CD45", "CD3", "CD8", "ChyTr"]
-        fov_paths = prepare_tif_data(num_samples, temp_dir, selected_markers)
+        fov_paths,_ = prepare_tif_data(num_samples, temp_dir, selected_markers)
         naming_convention = prep_naming_convention(os.path.join(temp_dir, "deepcell_output"))
         nimbus = Nimbus(
             fov_paths, naming_convention, temp_dir,
@@ -56,7 +68,7 @@ def test_tile_input():
     nimbus.model = lambda x: x[..., 96:-96, 96:-96]
     tiled_input, padding = nimbus._tile_input(image, tile_size, output_shape)
     assert tiled_input.shape == (3,3,2,512,512)
-    assert padding == (192, 192, 192, 192)
+    assert padding == [192, 192, 192, 192]
     
 
 def test_tile_and_stitch():
@@ -82,7 +94,3 @@ def test_tile_and_stitch():
     assert prediction.shape == (1, 768, 768)
     assert prediction.max() <= 1
     assert prediction.min() >= 0        
-
-
-def test_predict_segmentation():
-    pass
