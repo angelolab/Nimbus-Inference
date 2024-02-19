@@ -19,7 +19,15 @@ urls.Documentation = "https://Nimbus-Inference.readthedocs.io/"
 urls.Source = "https://github.com/angelolab/Nimbus-Inference"
 urls.Home-page = "https://github.com/angelolab/Nimbus-Inference"
 dependencies = [
-    "anndata",
+    "torch",
+    "torchvision",
+    "alpineer",
+    "scikit-image",
+    "tqdm",
+    "opencv-python",
+    "numpy",
+    "pandas",
+    "joblib",
     # for debug logging (referenced from the issue template)
     "session-info",
 ]
