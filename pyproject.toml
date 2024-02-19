@@ -28,6 +28,10 @@ dependencies = [
     "numpy",
     "pandas",
     "joblib",
+    "pandas",
+    "json",
+    "pathlib",
+    "glob",
     # for debug logging (referenced from the issue template)
     "session-info",
 ]

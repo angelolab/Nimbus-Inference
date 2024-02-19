@@ -1,9 +1,3 @@
-# nimbus model class
-# loads the image
-# does inference on images, decides if tile & stitch or whole image inference
-# preprocesses the predictions
-# saves the output to the output folder
-
 from alpineer import io_utils
 from skimage.util.shape import view_as_windows
 import nimbus_inference
