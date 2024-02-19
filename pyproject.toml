@@ -29,7 +29,6 @@ dependencies = [
     "pandas",
     "joblib",
     "pandas",
-    "json",
     "pathlib",
     # for debug logging (referenced from the issue template)
     "session-info",
