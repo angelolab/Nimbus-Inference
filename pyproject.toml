@@ -30,6 +30,7 @@ dependencies = [
     "joblib",
     "pandas",
     "pathlib",
+    "pyometiff",
     # for debug logging (referenced from the issue template)
     "session-info",
 ]
