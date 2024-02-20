@@ -16,6 +16,7 @@ import numpy as np
 import torch
 import json
 import os
+import re
 
 
 def nimbus_preprocess(image, **kwargs):
@@ -32,6 +33,8 @@ def nimbus_preprocess(image, **kwargs):
     normalize = kwargs.get("normalize", True)
     if normalize:
         marker = kwargs.get("marker", None)
+        if re.search(".tiff|.tiff|.png|.jpg|.jpeg", marker, re.IGNORECASE):
+            marker = marker.split(".")[0]
         normalization_dict = kwargs.get("normalization_dict", {})
         if marker in normalization_dict.keys():
             norm_factor = normalization_dict[marker]
@@ -107,6 +110,7 @@ class Nimbus(nn.Module):
         self.suffix = suffix
         if self.output_dir != "":
             os.makedirs(self.output_dir, exist_ok=True)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def check_inputs(self):
         """check inputs for Nimbus model"""
@@ -138,18 +142,14 @@ class Nimbus(nn.Module):
             padding (str): Padding mode for model, either "reflect" or "valid".
         """
         model = UNet(num_classes=1, padding=padding)
-        # make sure path can be resolved on any OS and when importing  from anywhere
-        self.checkpoint_path = os.path.normpath(
-            "src/nimbus_inference/assets/resUnet_baseline_hickey_tonic_dec_mskc_mskp_2_channel_halfres_512_bs32.pt"
+        # relative path to weights
+        path = os.path.dirname(nimbus_inference.__file__)
+        path = Path(path).resolve()
+        self.checkpoint_path = os.path.join(
+            path,
+            "assets",
+            "resUnet_baseline_hickey_tonic_dec_mskc_mskp_2_channel_halfres_512_bs32.pt"
         )
-        if not os.path.exists(self.checkpoint_path):
-            path = os.path.abspath(nimbus_inference.__file__)
-            path = Path(path).resolve()
-            self.checkpoint_path = os.path.join(
-                *path.parts[:-3],
-                "assets",
-                "resUnet_baseline_hickey_tonic_dec_mskc_mskp_2_channel_halfres_512_bs32.pt"
-            )
         if not os.path.exists(self.checkpoint_path):
             self.checkpoint_path = os.path.abspath(
                 *glob(
@@ -171,14 +171,15 @@ class Nimbus(nn.Module):
             raise FileNotFoundError(
                 "Could not find Nimbus weights at {ckpt_path}. \
                                     Current path is {current_path} and directory contains {dir_c},\
-                                    path to cell_clasification i{p}".format(
+                                    path to nimbus_inference {p}".format(
                     ckpt_path=self.checkpoint_path,
                     current_path=os.getcwd(),
                     dir_c=os.listdir(os.getcwd()),
-                    p=os.path.abspath(nimbus_inference.__file__),
+                    p=nimbus_inference.__file__,
                 )
             )
-        self.model = model
+        self.model = model.to(self.device)
+
 
     def prepare_normalization_dict(
         self, quantile=0.999, n_subset=10, multiprocessing=False, overwrite=False,
@@ -214,22 +215,27 @@ class Nimbus(nn.Module):
         if not hasattr(self, "normalization_dict"):
             self.prepare_normalization_dict()
         # check if GPU is available
-        print("Available GPUs: ", torch.cuda.device_count())
+        gpus = torch.cuda.device_count()
+        print("Available GPUs: ", gpus)
         print("Predictions will be saved in {}".format(self.output_dir))
         print("Iterating through fovs will take a while...")
         if self.suffix.lower() in [".ome.tif", ".ome.tiff"]:
             self.cell_table = predict_ome_fovs(
-                self.fov_paths, self.output_dir, self, self.normalization_dict,
-                self.segmentation_naming_convention, self.include_channels,
-                self.save_predictions, self.half_resolution, batch_size=self.batch_size,
-                test_time_augmentation=self.test_time_aug,
+                nimbus=self, fov_paths=self.fov_paths, output_dir=self.output_dir,
+                normalization_dict=self.normalization_dict,
+                segmentation_naming_convention=self.segmentation_naming_convention,
+                include_channels=self.include_channels, save_predictions=self.save_predictions,
+                half_resolution=self.half_resolution, batch_size=self.batch_size,
+                test_time_augmentation=self.test_time_aug, suffix=self.suffix,
             )
         elif self.suffix.lower() in [".tiff", ".tif", ".jpg", ".jpeg", ".png"]:
             self.cell_table = predict_fovs(
-                self.fov_paths, self.output_dir, self, self.normalization_dict,
-                self.segmentation_naming_convention, self.include_channels,
-                self.save_predictions, self.half_resolution, batch_size=self.batch_size,
-                test_time_augmentation=self.test_time_aug,
+                nimbus=self, fov_paths=self.fov_paths, output_dir=self.output_dir,
+                normalization_dict=self.normalization_dict,
+                segmentation_naming_convention=self.segmentation_naming_convention,
+                include_channels=self.include_channels, save_predictions=self.save_predictions,
+                half_resolution=self.half_resolution, batch_size=self.batch_size,
+                test_time_augmentation=self.test_time_aug, suffix=self.suffix,
             )
         self.cell_table.to_csv(os.path.join(self.output_dir, "nimbus_cell_table.csv"), index=False)
         return self.cell_table
@@ -244,17 +250,19 @@ class Nimbus(nn.Module):
             np.array: Predicted segmentation.
         """
         input_data = nimbus_preprocess(input_data, **preprocess_kwargs)
-        if np.all(np.greater_equal(self.input_shape, input_data.shape[-2:])):
+        if np.all(np.greater(self.input_shape, input_data.shape[-2:])):
             if not hasattr(self, "model") or self.model.padding != "reflect":
                 self.initialize_model(padding="reflect")
             with torch.no_grad():
                 if not isinstance(input_data, torch.Tensor):
                     input_data = torch.tensor(input_data).float()
+                input_data = input_data.to(self.device)
                 prediction = self.model(input_data)
                 prediction = prediction.cpu().squeeze(0).numpy()
         else:
             if not hasattr(self, "model") or self.model.padding != "valid":
                 self.initialize_model(padding="valid")
+                
             prediction = self._tile_and_stitch(input_data, self.batch_size)
         return prediction
 
@@ -267,7 +275,7 @@ class Nimbus(nn.Module):
             np.array: Predicted segmentation.
         """
         with torch.no_grad():
-            output_shape = self.model(torch.rand(1, 2, *self.input_shape)).shape[-2:]
+            output_shape = self.model(torch.rand(1, 2, *self.input_shape).to(self.device)).shape[-2:]
         input_shape = input_data.shape
         # f^dl crop to have perfect shift equivariance inference
         self.crop_by = np.array(output_shape) % 2 ** 5
@@ -288,8 +296,7 @@ class Nimbus(nn.Module):
         prediction = []
         for i in tqdm(range(0, len(tiled_input), self.batch_size)):
             batch = torch.from_numpy(tiled_input[i : i + self.batch_size]).float()
-            if torch.cuda.is_available():
-                batch = batch.cuda()
+            batch = batch.to(self.device)
             with torch.no_grad():
                 pred = self.model(batch).cpu().numpy()
                 # crop pred

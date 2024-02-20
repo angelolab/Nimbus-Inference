@@ -21,6 +21,7 @@ def calculate_normalization(channel_path, quantile):
         normalization_value (float): normalization value
     """
     mplex_img = io.imread(channel_path)
+    mplex_img = mplex_img.astype(np.float32)
     normalization_value = np.quantile(mplex_img, quantile)
     chan = os.path.basename(channel_path).split(".")[0]
     return chan, normalization_value
@@ -84,6 +85,7 @@ def prepare_input_data(mplex_img, instance_mask):
     Returns:
         input_data (np.array): input data for segmentation model
     """
+    mplex_img = mplex_img.astype(np.float32)
     edge = find_boundaries(instance_mask, mode="inner").astype(np.uint8)
     binary_mask = np.logical_and(edge == 0, instance_mask > 0).astype(np.float32)
     input_data = np.stack([mplex_img, binary_mask], axis=0)[np.newaxis,...] # bhwc
@@ -183,12 +185,13 @@ def predict_fovs(
         cell_table (pd.DataFrame): cell table with predicted confidence scores per fov and cell
     """
     fov_dict_list = []
-    for fov_path in tqdm(fov_paths):
+    for fov_path in fov_paths:
+        print(f"Predicting {fov_path}...")
         out_fov_path = os.path.join(
             os.path.normpath(output_dir), os.path.basename(fov_path)
         )
         df_fov = pd.DataFrame()
-        for channel in os.listdir(fov_path):
+        for channel in tqdm(os.listdir(fov_path)):
             channel_path = os.path.join(fov_path, channel)
             channel_ = channel.split(".")[0]
             if not channel.endswith(suffix) or (
@@ -213,13 +216,12 @@ def predict_fovs(
                     input_data, channel, nimbus, normalization_dict, batch_size=batch_size
                 )
             else:
-                prediction = nimbus._predict_segmentation(
+                prediction = nimbus.predict_segmentation(
                     input_data,
                     preprocess_kwargs={
                         "normalize": True, "marker": channel,
                         "normalization_dict": normalization_dict
                     },
-                    batch_size=batch_size
                 )
             prediction = np.squeeze(prediction)
             if half_resolution:
@@ -233,8 +235,8 @@ def predict_fovs(
                 os.makedirs(out_fov_path, exist_ok=True)
                 pred_int = (prediction*255.0).astype(np.uint8)
                 io.imsave(
-                    os.path.join(out_fov_path, channel), pred_int,
-                    photometric="minisblack", compression="zlib"
+                    os.path.join(out_fov_path, channel), pred_int, check_contrast=False,
+                    plugin="tifffile", photometric="minisblack", compression="zlib", 
                 )
         fov_dict_list.append(df_fov)
     cell_table = pd.concat(fov_dict_list, ignore_index=True)
@@ -248,7 +250,7 @@ def nimbus_preprocess(image, **kwargs):
     Returns:
         np.array: processed image array
     """
-    output = np.copy(image)
+    output = np.copy(image.astype(np.float32))
     if len(image.shape) != 4:
         raise ValueError("Image data must be 4D, got image of shape {}".format(image.shape))
 

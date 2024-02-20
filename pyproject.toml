@@ -19,7 +19,7 @@ urls.Documentation = "https://Nimbus-Inference.readthedocs.io/"
 urls.Source = "https://github.com/angelolab/Nimbus-Inference"
 urls.Home-page = "https://github.com/angelolab/Nimbus-Inference"
 dependencies = [
-    "torch==2.2.0",
+    "torch==2.2.0+cu118",
     "torchvision==0.17.0",
     "alpineer",
     "scikit-image",

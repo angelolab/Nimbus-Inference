@@ -148,7 +148,7 @@ def test_prepare_input_data():
         assert np.alltrue(np.unique(input_data[:,1]) == np.array([0, 1]))
         assert np.sum(input_data[:,1]) < np.sum(instance_mask)
         # check if mplex image is the same as before
-        assert np.alltrue(input_data[0, 0] == mplex_img)
+        assert np.alltrue(input_data[0, 0] == mplex_img.astype(np.float32))
 
 
 def test_tt_aug():
