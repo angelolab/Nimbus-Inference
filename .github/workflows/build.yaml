@@ -20,7 +20,9 @@ jobs:
         with:
           fetch-depth: 0
           lfs: true
-        run: git lfs pull
+
+      - name: LFS Pull
+        run: git lfs fetch --all
 
       - name: Build Wheels and Source Distribution
         run: pipx run build --wheel --sdist
