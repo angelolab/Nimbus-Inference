@@ -43,9 +43,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: LFS Pull
-        run: git lfs pull
-
       - name: Download Coverage Artifact
         uses: actions/download-artifact@v4
         # if `name` is not specified, all artifacts are downloaded.
@@ -54,3 +51,4 @@ jobs:
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          format: lcov
