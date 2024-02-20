@@ -62,7 +62,6 @@ testpaths = ["tests"]
 xfail_strict = true
 addopts = [
     "--import-mode=importlib", # allow using test files with same name
-    "--cov=nimbus_inference",
     "--cov-report=lcov",
 ]
 
