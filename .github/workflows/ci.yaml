@@ -44,7 +44,7 @@ jobs:
           fetch-depth: 0
 
       - name: LFS Pull
-        run: git lfs fetch --all
+        run: git lfs pull
 
       - name: Download Coverage Artifact
         uses: actions/download-artifact@v4
