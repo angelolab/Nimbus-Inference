@@ -45,9 +45,9 @@ def nimbus_preprocess(image, **kwargs):
                     marker
                 )
             )
-            norm_factor = np.quantile(output[..., 0], 0.999)
+            norm_factor = np.quantile(output[:,0,...], 0.999)
         # normalize only marker channel in chan 0 not binary mask in chan 1
-        output[..., 0] /= norm_factor
+        output[:,0,...] /= norm_factor
         output = output.clip(0, 1)
     return output
 
