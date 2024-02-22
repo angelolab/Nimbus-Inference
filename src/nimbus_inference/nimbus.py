@@ -7,6 +7,7 @@ from nimbus_inference.utils import (
     predict_ome_fovs,
     nimbus_preprocess,
 )
+from huggingface_hub import hf_hub_download
 from nimbus_inference.unet import UNet
 from tqdm.autonotebook import tqdm
 from pathlib import Path
@@ -151,35 +152,16 @@ class Nimbus(nn.Module):
             "resUnet_baseline_hickey_tonic_dec_mskc_mskp_2_channel_halfres_512_bs32.pt"
         )
         if not os.path.exists(self.checkpoint_path):
-            self.checkpoint_path = os.path.abspath(
-                *glob(
-                    "**/resUnet_baseline_hickey_tonic_dec_mskc_mskp_2_channel_halfres_512_bs32.pt"
-                )
+            local_dir = os.path.join(path, "assets")
+            self.checkpoint_path = hf_hub_download(
+                repo_id="JLrumberger/Nimbus-Inference",
+                filename="resUnet_baseline_hickey_tonic_dec_mskc_mskp_2_channel_halfres_512_bs32.pt",
+                local_dir=local_dir,
+                local_dir_use_symlinks=False,
             )
-
-        if not os.path.exists(self.checkpoint_path):
-            self.checkpoint_path = os.path.join(
-                os.getcwd(),
-                "assets",
-                "resUnet_baseline_hickey_tonic_dec_mskc_mskp_2_channel_halfres_512_bs32.pt",
-            )
-
-        if os.path.exists(self.checkpoint_path):
-            model.load_state_dict(torch.load(self.checkpoint_path))
-            print("Loaded weights from {}".format(self.checkpoint_path))
-        else:
-            raise FileNotFoundError(
-                "Could not find Nimbus weights at {ckpt_path}. \
-                                    Current path is {current_path} and directory contains {dir_c},\
-                                    path to nimbus_inference {p}".format(
-                    ckpt_path=self.checkpoint_path,
-                    current_path=os.getcwd(),
-                    dir_c=os.listdir(os.getcwd()),
-                    p=nimbus_inference.__file__,
-                )
-            )
+        model.load_state_dict(torch.load(self.checkpoint_path))
+        print("Loaded weights from {}".format(self.checkpoint_path))
         self.model = model.to(self.device)
-
 
     def prepare_normalization_dict(
         self, quantile=0.999, n_subset=10, multiprocessing=False, overwrite=False,
