@@ -153,6 +153,7 @@ class Nimbus(nn.Module):
         )
         if not os.path.exists(self.checkpoint_path):
             local_dir = os.path.join(path, "assets")
+            print("Downloading weights from Hugging Face Hub...")
             self.checkpoint_path = hf_hub_download(
                 repo_id="JLrumberger/Nimbus-Inference",
                 filename="resUnet_baseline_hickey_tonic_dec_mskc_mskp_2_channel_halfres_512_bs32.pt",
