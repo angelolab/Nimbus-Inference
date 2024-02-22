@@ -22,9 +22,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: LFS Pull
-        run: git lfs pull
-
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
