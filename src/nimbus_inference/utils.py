@@ -5,9 +5,11 @@ import torch
 import random
 import numpy as np
 import pandas as pd
-from skimage import io
+import imageio as io
+# from skimage import io
 from tqdm.autonotebook import tqdm
 from joblib import Parallel, delayed
+from joblib.externals.loky import get_reusable_executor
 from skimage.segmentation import find_boundaries
 from skimage.measure import regionprops_table
 
@@ -69,6 +71,8 @@ def prepare_normalization_dict(
             if channel not in normalization_dict:
                 normalization_dict[channel] = []
             normalization_dict[channel].append(normalization_value)
+    if n_jobs > 1:
+        get_reusable_executor().shutdown(wait=True)
     for channel in normalization_dict.keys():
         normalization_dict[channel] = np.mean(normalization_dict[channel])
     # save normalization dict
@@ -234,9 +238,9 @@ def predict_fovs(
             if save_predictions:
                 os.makedirs(out_fov_path, exist_ok=True)
                 pred_int = (prediction*255.0).astype(np.uint8)
-                io.imsave(
-                    os.path.join(out_fov_path, channel), pred_int, check_contrast=False,
-                    plugin="tifffile", photometric="minisblack", compression="zlib", 
+                io.imwrite(
+                    os.path.join(out_fov_path, channel), pred_int, photometric="minisblack",
+                    # compress=0, 
                 )
         fov_dict_list.append(df_fov)
     cell_table = pd.concat(fov_dict_list, ignore_index=True)

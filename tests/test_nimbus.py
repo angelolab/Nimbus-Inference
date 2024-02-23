@@ -67,9 +67,9 @@ def test_tile_input():
     nimbus = Nimbus(fov_paths=[""], segmentation_naming_convention="", output_dir="")
     nimbus.model = lambda x: x[..., 96:-96, 96:-96]
     tiled_input, padding = nimbus._tile_input(image, tile_size, output_shape)
-    assert tiled_input.shape == (3,3,2,512,512)
+    assert tiled_input.shape == (3,3,1,2,512,512)
     assert padding == [192, 192, 192, 192]
-    
+
 
 def test_tile_and_stitch():
     # tests _tile_and_stitch which chains _tile_input, model.forward and _stitch_tiles 
@@ -85,12 +85,12 @@ def test_tile_and_stitch():
         nimbus.model = lambda x: x[..., s:-s, s:-s]
         out = nimbus._tile_and_stitch(image)
         assert np.all(
-            np.isclose(np.transpose(image[0], (1,2,0)), np.transpose(out, (1,2,0)), rtol=1e-4)
+            np.isclose(image, out, rtol=1e-4)
         )
     # check if tile and stitch works with the real model
     nimbus.initialize_model(padding="valid")
     image = np.random.rand(1, 2, 768, 768)
     prediction = nimbus._tile_and_stitch(image)
-    assert prediction.shape == (1, 768, 768)
+    assert prediction.shape == (1, 1, 768, 768)
     assert prediction.max() <= 1
     assert prediction.min() >= 0        

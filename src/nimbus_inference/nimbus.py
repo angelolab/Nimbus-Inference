@@ -49,7 +49,7 @@ def nimbus_preprocess(image, **kwargs):
             norm_factor = np.quantile(output[:,0,...], 0.999)
         # normalize only marker channel in chan 0 not binary mask in chan 1
         output[:,0,...] /= norm_factor
-        output = output.clip(0, 1)
+        # output = output.clip(0, 1)
     return output
 
 
@@ -245,8 +245,7 @@ class Nimbus(nn.Module):
         else:
             if not hasattr(self, "model") or self.model.padding != "valid":
                 self.initialize_model(padding="valid")
-                
-            prediction = self._tile_and_stitch(input_data, self.batch_size)
+            prediction = self._tile_and_stitch(input_data)
         return prediction
 
     def _tile_and_stitch(self, input_data):
@@ -271,9 +270,9 @@ class Nimbus(nn.Module):
             padding[0] - shape_diff[0], padding[1] - shape_diff[0],
             padding[2] - shape_diff[1], padding[3] - shape_diff[1],
         ]
-        h_t, h_w = tiled_input.shape[:2]
+        h_t, h_w, b, c = tiled_input.shape[:4]
         tiled_input = tiled_input.reshape(
-            h_t * h_w, input_shape[1], *self.input_shape
+            h_t * h_w * b, c, *self.input_shape
         )  # h_t,w_t,c,h,w -> h_t*w_t,c,h,w
         # predict tiles
         prediction = []
@@ -291,7 +290,7 @@ class Nimbus(nn.Module):
                     ]
                 prediction += [pred]
         prediction = np.concatenate(prediction)  # h_t*w_t,c,h,w
-        prediction = prediction.reshape(h_t, h_w, *prediction.shape[1:])  # h_t,w_t,c,h,w
+        prediction = prediction.reshape(h_t, h_w, b, *prediction.shape[1:])  # h_t,w_t,b,c,h,w
         # stitch tiles
         prediction = self._stitch_tiles(prediction, padding)
         return prediction
@@ -316,9 +315,11 @@ class Nimbus(nn.Module):
         image = np.pad(image, ((0, 0), (0, 0), (pad_h0, pad_h1), (pad_w0, pad_w1)), mode=pad_mode)
         b, c = image.shape[:2]
         # tile image
-        view = np.squeeze(
-            view_as_windows(image, [b, c] + list(tile_size), step=[b, c] + list(output_shape))
-        )  # h_t,w_t,c,h,w
+        view = np.squeeze( 
+            view_as_windows(image, [b, c] + list(tile_size), step=[b, c] + list(output_shape)),
+            axis=(0,1)
+        )
+        # h_t,w_t,b,c,h,w
         padding = [pad_h0, pad_h1, pad_w0, pad_w1]
         return view, padding
 
@@ -331,11 +332,12 @@ class Nimbus(nn.Module):
             np.array: Reconstructed image.
         """
         # stitch tiles
-        h_t, w_t, c, h, w = tiles.shape
-        stitched = np.zeros((c, h_t * h, w_t * w))
+        h_t, w_t, b, c, h, w = tiles.shape
+        stitched = np.zeros((b, c, h_t * h, w_t * w))
         for i in range(h_t):
             for j in range(w_t):
-                stitched[:, i * h : (i + 1) * h, j * w : (j + 1) * w] = tiles[i, j]
+                for b_ in range(b):
+                    stitched[b_, :, i * h : (i + 1) * h, j * w : (j + 1) * w] = tiles[i, j, b_]
         # remove padding
-        stitched = stitched[:, padding[0] : -padding[1], padding[2] : -padding[3]]
+        stitched = stitched[:, :, padding[0] : -padding[1], padding[2] : -padding[3]]
         return stitched
