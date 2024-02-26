@@ -162,7 +162,7 @@ class Nimbus(nn.Module):
             )
         model.load_state_dict(torch.load(self.checkpoint_path))
         print("Loaded weights from {}".format(self.checkpoint_path))
-        self.model = model.to(self.device)
+        self.model = model.to(self.device).eval()
 
     def prepare_normalization_dict(
         self, quantile=0.999, n_subset=10, multiprocessing=False, overwrite=False,
@@ -258,7 +258,6 @@ class Nimbus(nn.Module):
         """
         with torch.no_grad():
             output_shape = self.model(torch.rand(1, 2, *self.input_shape).to(self.device)).shape[-2:]
-        input_shape = input_data.shape
         # f^dl crop to have perfect shift equivariance inference
         self.crop_by = np.array(output_shape) % 2 ** 5
         output_shape = output_shape - self.crop_by
@@ -285,8 +284,8 @@ class Nimbus(nn.Module):
                 if self.crop_by.any():
                     pred = pred[
                         ...,
-                        self.crop_by[0] // 2 : -self.crop_by[0] // 2,
-                        self.crop_by[1] // 2 : -self.crop_by[1] // 2,
+                        self.crop_by[0]//2 : -self.crop_by[0]//2,
+                        self.crop_by[1]//2 : -self.crop_by[1]//2,
                     ]
                 prediction += [pred]
         prediction = np.concatenate(prediction)  # h_t*w_t,c,h,w
@@ -305,7 +304,6 @@ class Nimbus(nn.Module):
         Returns:
             list: List of tiled images.
         """
-        overlap_px = (np.array(tile_size) - np.array(output_shape)) // 2
         # pad image to be divisible by tile size
         pad_h0, pad_w0 = np.array(tile_size) - (
             np.array(image.shape[-2:]) % np.array(output_shape)

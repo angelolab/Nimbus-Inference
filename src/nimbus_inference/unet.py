@@ -108,8 +108,6 @@ class ConvBlock(nn.Module):
         )
         self.bn_2 = nn.BatchNorm2d(filters)
 
-
-
     def forward(self, x):
         skip = self.conv2d_0(x)
         x = self.padding_layer(skip)
@@ -195,9 +193,7 @@ class CropConcatBlock(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, nx: int = 512,
-                 ny: int = 512,
-                 channels: int = 1,
+    def __init__(self, 
                  num_classes: int = 2,
                  layer_depth: int = 5,
                  filters_root: int = 64,
