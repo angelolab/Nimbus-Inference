@@ -34,6 +34,9 @@ dependencies = [
     "huggingface_hub",
     # for debug logging (referenced from the issue template)
     "session-info",
+    "ipywidgets",
+    "natsort",
+    "ipython",
 ]
 
 
