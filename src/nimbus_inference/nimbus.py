@@ -233,7 +233,7 @@ class Nimbus(nn.Module):
             np.array: Predicted segmentation.
         """
         input_data = nimbus_preprocess(input_data, **preprocess_kwargs)
-        if np.all(np.greater(self.input_shape, input_data.shape[-2:])):
+        if np.all(np.greater_equal(self.input_shape, input_data.shape[-2:])):
             if not hasattr(self, "model") or self.model.padding != "reflect":
                 self.initialize_model(padding="reflect")
             with torch.no_grad():
