@@ -24,7 +24,8 @@ def calculate_normalization(channel_path, quantile):
     """
     mplex_img = io.imread(channel_path)
     mplex_img = mplex_img.astype(np.float32)
-    normalization_value = np.quantile(mplex_img, quantile)
+    foreground = mplex_img[mplex_img > 0]
+    normalization_value = np.quantile(foreground, quantile)
     chan = os.path.basename(channel_path).split(".")[0]
     return chan, normalization_value
 
