@@ -1,4 +1,4 @@
-from alpineer import io_utils
+from alpineer import io_utils, misc_utils
 from skimage.util.shape import view_as_windows
 import nimbus_inference
 from nimbus_inference.utils import (
@@ -81,7 +81,7 @@ class Nimbus(nn.Module):
     def __init__(
         self, fov_paths, segmentation_naming_convention, output_dir, save_predictions=True,
         include_channels=[], half_resolution=True, batch_size=4, test_time_aug=True,
-        input_shape=[1024, 1024], suffix=".tiff",
+        input_shape=[1024, 1024], suffix=".tiff", device="auto",
     ):
         """Initializes a Nimbus Application.
         Args:
@@ -96,6 +96,8 @@ class Nimbus(nn.Module):
             test_time_aug (bool): Whether to use test time augmentation.
             input_shape (list): Shape of input images.
             suffix (str): Suffix of images to load.
+            device (str): Device to run model on, either "auto" (either "mps" or "cuda"
+            , with "cpu" as a fallback), "cpu", "cuda", or "mps". Defaults to "auto".
         """
         super(Nimbus, self).__init__()
         self.fov_paths = fov_paths
@@ -111,7 +113,17 @@ class Nimbus(nn.Module):
         self.suffix = suffix
         if self.output_dir != "":
             os.makedirs(self.output_dir, exist_ok=True)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        if device == "auto":
+          if torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+          elif torch.cuda.is_available():
+            self.device = torch.device("cuda")
+          else:
+            self.device = torch.device("cpu")
+        else:
+            misc_utils.verify_in_list(device=[device], valid_devices=["cpu", "cuda", "mps"])
+            self.device = torch.device(device)
 
     def check_inputs(self):
         """check inputs for Nimbus model"""
@@ -313,7 +325,7 @@ class Nimbus(nn.Module):
         image = np.pad(image, ((0, 0), (0, 0), (pad_h0, pad_h1), (pad_w0, pad_w1)), mode=pad_mode)
         b, c = image.shape[:2]
         # tile image
-        view = np.squeeze( 
+        view = np.squeeze(
             view_as_windows(image, [b, c] + list(tile_size), step=[b, c] + list(output_shape)),
             axis=(0,1)
         )
