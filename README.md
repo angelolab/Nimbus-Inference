@@ -7,34 +7,36 @@
 [link-tests]: https://github.com/angelolab/Nimbus-Inference/actions/workflows/test.yml
 [badge-docs]: https://img.shields.io/readthedocs/Nimbus-Inference
 
-A very interesting piece of code
+The Nimbus repo contains code for inference of a machine learning model that classifies cells into marker positive/negative for arbitrary protein markers and different imaging platforms.
 
-## Getting started
+## Installation instructions
 
-Please refer to the [documentation][link-docs]. In particular, the
+Clone the repository
 
--   [API documentation][link-api].
+`git clone https://github.com/angelolab/Nimbus-Inference`
 
-## Installation
 
-You need to have Python 3.9 or newer installed on your system. If you don't have
-Python installed, we recommend installing [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge).
+Make a conda environment for Nimbus and activate it
 
-There are several alternative options to install Nimbus-Inference:
+`conda create -n Nimbus python==3.10`
 
-<!--
-1) Install the latest release of `Nimbus-Inference` from `PyPI <https://pypi.org/project/Nimbus-Inference/>`_:
+`conda activate Nimbus`
 
-```bash
-pip install Nimbus-Inference
-```
--->
+Install CUDA libraries if you have a NVIDIA GPU available 
 
-1. Install the latest development version:
+`conda install -c conda-forge cudatoolkit=11.2 cudnn=8.1.0`
 
-```bash
-pip install git+https://github.com/angelolab/Nimbus-Inference.git@main
-```
+Install the package and all depedencies in the conda environment
+
+`python -m pip install -e Nimbus-Inference`
+
+
+Navigate to the example notebooks and start jupyter
+
+`cd Nimbus-Inference/templates`
+
+`jupyter notebook`
+
 
 ## Release notes
 
