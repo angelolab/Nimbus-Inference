@@ -6,19 +6,22 @@ from skimage import io
 from copy import copy
 import numpy as np
 from natsort import natsorted
+from skimage.segmentation import find_boundaries
 
 
 class NimbusViewer(object):
-    def __init__(self, input_dir, output_dir, img_width='600px'):
+    def __init__(self, input_dir, output_dir, segmentation_naming_convention=None, img_width='600px'):
         """Viewer for Nimbus application.
         Args:
             input_dir (str): Path to directory containing individual channels of multiplexed images
             output_dir (str): Path to directory containing output of Nimbus application.
+            segmentation_naming_convention (fn): Function that maps input path to segmentation path
             img_width (str): Width of images in viewer.
         """
         self.image_width = img_width
         self.input_dir = input_dir
         self.output_dir = output_dir
+        self.segmentation_naming_convention = segmentation_naming_convention
         self.fov_names = [os.path.basename(p) for p in os.listdir(output_dir) if \
                           os.path.isdir(os.path.join(output_dir, p))]
         self.fov_names = natsorted(self.fov_names)
@@ -63,7 +66,7 @@ class NimbusViewer(object):
         self.green_select.options = natsorted(channels)
         self.blue_select.options = natsorted(channels)
 
-    def create_composite_image(self, path_dict):
+    def create_composite_image(self, path_dict, add_overlay=True, add_boundaries=False):
         """Creates composite image from input paths.
         Args:
             path_dict (dict): Dictionary of paths to images.
@@ -82,9 +85,29 @@ class NimbusViewer(object):
                 non_none = [p for p in path_dict.values() if p]
                 img = io.imread(non_none[0])
                 output_image.append(img*0)
-
+        # add overlay of instances
         composite_image = np.stack(output_image, axis=-1)
-        return composite_image
+        if self.segmentation_naming_convention and add_overlay:
+            fov_path = os.path.split(list(path_dict.values())[0])[0]
+            seg_path = self.segmentation_naming_convention(fov_path)
+            seg_img = io.imread(seg_path)
+            seg_boundaries = find_boundaries(seg_img, mode='inner')
+            seg_img[seg_boundaries] = 0
+            seg_img = np.clip(seg_img, 0, 1)
+            seg_img = np.repeat(seg_img[..., np.newaxis], 3, axis=-1) * np.max(composite_image)
+            background_mask = composite_image < np.max(composite_image) * 0.2
+            composite_image[background_mask] += (seg_img[background_mask] * 0.2).astype(composite_image.dtype)
+        elif self.segmentation_naming_convention and add_boundaries:
+            fov_path = os.path.split(list(path_dict.values())[0])[0]
+            seg_path = self.segmentation_naming_convention(fov_path)
+            seg_img = io.imread(seg_path)
+            seg_boundaries = find_boundaries(seg_img, mode='inner')
+            val = (np.max(composite_image, axis=(0,1))*0.5).astype(composite_image.dtype)
+            val = np.min(val[val>0])
+            composite_image[seg_boundaries] = [val]*3 
+        else:
+            seg_boundaries = None
+        return composite_image, seg_boundaries
 
     def layout(self):
         """Creates layout for viewer."""
@@ -173,12 +196,14 @@ class NimbusViewer(object):
         non_none = [p for p in path_dict.values() if p]
         if not non_none:
             return
-        composite_image = self.create_composite_image(path_dict)
-        in_composite_image = self.create_composite_image(in_path_dict)
+        composite_image, _ = self.create_composite_image(path_dict)
+        in_composite_image, seg_boundaries = self.create_composite_image(in_path_dict, add_overlay=False, add_boundaries=True)
         in_composite_image = in_composite_image / np.quantile(
             in_composite_image, 0.999, axis=(0,1)
         )
         in_composite_image = np.clip(in_composite_image*255, 0, 255).astype(np.uint8)
+        if seg_boundaries is not None:
+            in_composite_image[seg_boundaries] = [127, 127, 127]
         # update image viewers
         self.update_img(self.input_image, in_composite_image)
         self.update_img(self.output_image, composite_image)
