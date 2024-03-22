@@ -10,7 +10,9 @@ from skimage.segmentation import find_boundaries
 
 
 class NimbusViewer(object):
-    def __init__(self, input_dir, output_dir, segmentation_naming_convention=None, img_width='600px'):
+    def __init__(
+            self, input_dir, output_dir, segmentation_naming_convention=None, img_width='600px'
+        ):
         """Viewer for Nimbus application.
         Args:
             input_dir (str): Path to directory containing individual channels of multiplexed images
@@ -27,6 +29,11 @@ class NimbusViewer(object):
         self.fov_names = natsorted(self.fov_names)
         self.update_button = widgets.Button(description="Update Image")
         self.update_button.on_click(self.update_button_click)
+        self.overlay_checkbox = widgets.Checkbox(
+            value=True,
+            description='Overlay segmentations',
+            disabled=False
+        )
 
         self.fov_select = widgets.Select(
             options=self.fov_names,
@@ -96,7 +103,9 @@ class NimbusViewer(object):
             seg_img = np.clip(seg_img, 0, 1)
             seg_img = np.repeat(seg_img[..., np.newaxis], 3, axis=-1) * np.max(composite_image)
             background_mask = composite_image < np.max(composite_image) * 0.2
-            composite_image[background_mask] += (seg_img[background_mask] * 0.2).astype(composite_image.dtype)
+            composite_image[background_mask] += (seg_img[background_mask] * 0.2).astype(
+                composite_image.dtype
+            )
         elif self.segmentation_naming_convention and add_boundaries:
             fov_path = os.path.split(list(path_dict.values())[0])[0]
             seg_path = self.segmentation_naming_convention(fov_path)
@@ -118,6 +127,8 @@ class NimbusViewer(object):
         ])
         self.input_image.layout.width = self.image_width
         self.output_image.layout.width = self.image_width
+        self.input_image.layout.height = self.image_width
+        self.output_image.layout.height = self.image_width
         viewer_html = widgets.HTML("<h2>Select files</h2>")
         input_html = widgets.HTML("<h2>Input</h2>")
         output_html = widgets.HTML("<h2>Nimbus Output</h2>")
@@ -127,6 +138,7 @@ class NimbusViewer(object):
                 viewer_html,
                 self.fov_select,
                 channel_selectors,
+                self.overlay_checkbox,
                 self.update_button
             ]),
         widgets.VBox([
@@ -197,7 +209,9 @@ class NimbusViewer(object):
         if not non_none:
             return
         composite_image, _ = self.create_composite_image(path_dict)
-        in_composite_image, seg_boundaries = self.create_composite_image(in_path_dict, add_overlay=False, add_boundaries=True)
+        in_composite_image, seg_boundaries = self.create_composite_image(
+            in_path_dict, add_overlay=False, add_boundaries=self.overlay_checkbox.value
+        )
         in_composite_image = in_composite_image / np.quantile(
             in_composite_image, 0.999, axis=(0,1)
         )
