@@ -1,11 +1,8 @@
 from alpineer import io_utils, misc_utils
 from skimage.util.shape import view_as_windows
 import nimbus_inference
-from nimbus_inference.utils import (
-    prepare_normalization_dict,
-    predict_fovs,
-    predict_ome_fovs,
-    nimbus_preprocess,
+from nimbus_inference.utils import (prepare_normalization_dict, prepare_normalization_dict_ome,
+    predict_fovs, predict_ome_fovs, nimbus_preprocess,
 )
 from huggingface_hub import hf_hub_download
 from nimbus_inference.unet import UNet
@@ -161,14 +158,14 @@ class Nimbus(nn.Module):
         self.checkpoint_path = os.path.join(
             path,
             "assets",
-            "resUnet_baseline_hickey_tonic_dec_mskc_mskp_2_channel_halfres_512_bs32.pt"
+            "resUnet_baseline_hickey_tonic_dec_mskc_mskp_2_channel_halfres_512_bs32_cw_0.8.pt"
         )
         if not os.path.exists(self.checkpoint_path):
             local_dir = os.path.join(path, "assets")
             print("Downloading weights from Hugging Face Hub...")
             self.checkpoint_path = hf_hub_download(
                 repo_id="JLrumberger/Nimbus-Inference",
-                filename="resUnet_baseline_hickey_tonic_dec_mskc_mskp_2_channel_halfres_512_bs32.pt",
+                filename="resUnet_baseline_hickey_tonic_dec_mskc_mskp_2_channel_halfres_512_bs32_cw_0.8.pt",
                 local_dir=local_dir,
                 local_dir_use_symlinks=False,
             )
@@ -192,11 +189,17 @@ class Nimbus(nn.Module):
         if os.path.exists(self.normalization_dict_path) and not overwrite:
             self.normalization_dict = json.load(open(self.normalization_dict_path))
         else:
-
             n_jobs = os.cpu_count() if multiprocessing else 1
-            self.normalization_dict = prepare_normalization_dict(
-                self.fov_paths, self.output_dir, quantile, self.include_channels, n_subset, n_jobs
-            )
+            if self.suffix.lower() in [".ome.tif", ".ome.tiff"]:
+                self.normalization_dict = prepare_normalization_dict_ome(
+                    self.fov_paths, self.output_dir, quantile, self.include_channels, n_subset,
+                    n_jobs
+                )
+            else:
+                self.normalization_dict = prepare_normalization_dict(
+                    self.fov_paths, self.output_dir, quantile, self.include_channels, n_subset,
+                    n_jobs
+                )
         if self.include_channels == []:
             self.include_channels = list(self.normalization_dict.keys())
 
@@ -223,7 +226,7 @@ class Nimbus(nn.Module):
                 half_resolution=self.half_resolution, batch_size=self.batch_size,
                 test_time_augmentation=self.test_time_aug, suffix=self.suffix,
             )
-        elif self.suffix.lower() in [".tiff", ".tif", ".jpg", ".jpeg", ".png"]:
+        else:
             self.cell_table = predict_fovs(
                 nimbus=self, fov_paths=self.fov_paths, output_dir=self.output_dir,
                 normalization_dict=self.normalization_dict,
