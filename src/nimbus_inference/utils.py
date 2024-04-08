@@ -6,81 +6,195 @@ import random
 import numpy as np
 import pandas as pd
 import imageio as io
-# from skimage import io
 from tqdm.autonotebook import tqdm
 from joblib import Parallel, delayed
 from joblib.externals.loky import get_reusable_executor
 from skimage.segmentation import find_boundaries
 from skimage.measure import regionprops_table
 from pyometiff import OMETIFFReader
+from alpineer import io_utils, misc_utils
+from typing import Callable
+import tifffile
+import zarr
 
 
-def calculate_normalization(channel_path, quantile):
-    """Calculates the normalization value for a given channel
-    Args:
-        channel_path (str): path to channel
-        quantile (float): quantile to use for normalization
-    Returns:
-        normalization_value (float): normalization value
-    """
-    mplex_img = io.imread(channel_path)
-    mplex_img = mplex_img.astype(np.float32)
-    foreground = mplex_img[mplex_img > 0]
-    normalization_value = np.quantile(foreground, quantile)
-    chan = os.path.basename(channel_path).split(".")[0]
-    return chan, normalization_value
+class LazyOMETIFFReader(OMETIFFReader):
+    def __init__(self, fpath: str):
+        """Lazy OMETIFFReader class that reads channels only when needed
+        Args:
+            fpath (str): path to ome.tif file
+        """
+        super().__init__(fpath)
+        self.metadata = self.get_metadata()
+        self.channels = self.get_channel_names()
+        self.shape = self.get_shape()
+    
+    def get_metadata(self):
+        """Get the metadata of the OME-TIFF file
+        Returns:
+            metadata (dict): metadata of the OME-TIFF file
+        """
+        with tifffile.TiffFile(str(self.fpath)) as tif:
+            if tif.is_ome:
+                omexml_string = tif.ome_metadata
+                return self.parse_metadata(omexml_string)
+            else:
+                raise ValueError("File is not an OME-TIFF file.")
 
-
-def prepare_normalization_dict(
-        fov_paths, output_dir, quantile=0.999, include_channels=[], n_subset=10, n_jobs=1,
-        output_name="normalization_dict.json"
-    ):
-    """Prepares the normalization dict for a list of fovs
-    Args:
-        fov_paths (list): list of paths to fovs
-        output_dir (str): path to output directory
-        quantile (float): quantile to use for normalization
-        exclude_channels (list): list of channels to exclude
-        n_subset (int): number of fovs to use for normalization
-        n_jobs (int): number of jobs to use for joblib multiprocessing
-        output_name (str): name of output file
-    Returns:
-        normalization_dict (dict): dict with channel names as keys and norm factors  as values
-    """
-    normalization_dict = {}
-    if n_subset is not None:
-        random.shuffle(fov_paths)
-        fov_paths = fov_paths[:n_subset]
-    print("Iterate over fovs...")
-    for fov_path in tqdm(fov_paths):
-        channels = os.listdir(fov_path)
-        if include_channels:
-            channels = [
-                channel for channel in channels if channel.split(".")[0] in include_channels
-            ]
-        channel_paths = [os.path.join(fov_path, channel) for channel in channels]
-        if n_jobs > 1:
-            normalization_values = Parallel(n_jobs=n_jobs)(
-            delayed(calculate_normalization)(channel_path, quantile)
-            for channel_path in channel_paths
-            )
+    def get_channel_names(self):
+        """Get the channel names of the OME-TIFF file
+        Returns:
+            channel_names (list): list of channel names
+        """
+        if hasattr(self, "metadata"):
+            return list(self.metadata["Channels"].keys())
         else:
-            normalization_values = [
-                calculate_normalization(channel_path, quantile)
-                for channel_path in channel_paths
+            return []
+    
+    def get_shape(self):
+        """Get the shape of the OME-TIFF file array data
+        Returns:
+            shape (tuple): shape of the array data
+        """
+        with tifffile.imread(str(self.fpath), aszarr=True) as store:
+            z = zarr.open(store, mode='r')
+            shape = z.shape
+        return shape
+
+    def get_channel(self, channel_name: str):
+        """Get an individual channel from the OME-TIFF file by name
+        Args:
+            channel_name (str): name of the channel
+        Returns:
+            channel (np.array): channel image
+        """
+        idx = self.channels.index(channel_name)
+        with tifffile.imread(str(self.fpath), aszarr=True) as store:
+            z = zarr.open(store, mode='r')
+            # correct DimOrder, often DimOrder is TZCYX, but image is stored as CYX, thus we remove
+            # the trailing dimensions
+            dim_order = self.metadata["DimOrder"]
+            dim_order = dim_order[-len(z.shape):]
+            channel_idx = dim_order.find("C")
+            slice_string = "z[" + ":," * channel_idx + str(idx) + "]"
+            channel = eval(slice_string)
+        return channel
+
+
+class MultiplexDataset():
+    def __init__(
+            self, fov_paths: list, segmentation_naming_convention: Callable = None,
+            suffix: str = ".tiff"
+        ):
+        """Multiplex dataset class that gives a common interface for data loading of multiplex
+        datasets stored as individual channel images in folders or as multi-channel tiffs.
+        Args:
+            fov_paths (list): list of paths to fovs
+            segmentation_naming_convention (function): function to get instance mask path from fov
+            path
+        """
+        self.fov_paths = fov_paths
+        self.segmentation_naming_convention = segmentation_naming_convention
+        self.suffix = suffix
+        self.check_inputs()
+        self.multi_channel = self.is_multi_channel_tiff(fov_paths[0])
+        self.fovs = self.get_fovs()
+        self.channels = self.get_channels()
+
+    def check_inputs(self):
+        """check inputs for Nimbus model"""
+        # check if all paths in fov_paths exists
+        if not isinstance(self.fov_paths, (list, tuple)):
+            self.fov_paths = [self.fov_paths]
+        io_utils.validate_paths(self.fov_paths)
+        print("All inputs are valid")
+
+    def __len__(self):
+        """Return the number of fovs in the dataset"""
+        return len(self.fov_paths)
+    
+    def is_multi_channel_tiff(self, fov_path: str):
+        """Check if fov is a multi-channel tiff
+        Args:
+            fov_path (str): path to fov
+        Returns:
+            multi_channel (bool): whether fov is multi-channel
+        """
+        multi_channel = False
+        if fov_path.lower().endswith(("ome.tif", "ome.tiff")):
+            self.img_reader = LazyOMETIFFReader(fov_path)
+            if len(self.img_reader.shape) > 2:
+                multi_channel = True
+        return multi_channel
+    
+    def get_channels(self):
+        """Get the channel names for the dataset"""
+        if self.multi_channel:
+            return self.img_reader.channels
+        else:
+            channels = [
+                channel.replace(self.suffix, "") for channel in os.listdir(self.fov_paths[0]) \
+                    if channel.endswith(self.suffix)
             ]
-        for channel, normalization_value in normalization_values:
-            if channel not in normalization_dict:
-                normalization_dict[channel] = []
-            normalization_dict[channel].append(normalization_value)
-    if n_jobs > 1:
-        get_reusable_executor().shutdown(wait=True)
-    for channel in normalization_dict.keys():
-        normalization_dict[channel] = np.mean(normalization_dict[channel])
-    # save normalization dict
-    with open(os.path.join(output_dir, output_name), 'w') as f:
-        json.dump(normalization_dict, f)
-    return normalization_dict
+            return channels
+    
+    def get_fovs(self):
+        """Get the fovs in the dataset"""
+        return [os.path.basename(fov).replace(self.suffix, "") for fov in self.fov_paths]
+    
+    def get_channel(self, fov: str, channel: str):
+        """Get the channel from a fov
+        Args:
+            fov (str): name of a fov
+            channel (str): channel name
+        Returns:
+            channel (np.array): channel image
+        """
+        if self.multi_channel:
+            return self.get_channel_stack(fov, channel)
+        else:
+            return self.get_channel_single(fov, channel)
+
+    def get_channel_single(self, fov: str, channel: str):
+        """Get the channel from a fov stored as a folder with individual channel images
+        Args:
+            fov (str): name of a fov
+            channel (str): channel name
+        Returns:
+            channel (np.array): channel image
+        """
+        idx = self.fovs.index(fov)
+        fov_path = self.fov_paths[idx]
+        channel_path = os.path.join(fov_path, channel + self.suffix)
+        channel = np.squeeze(io.imread(channel_path))
+        return channel
+
+    def get_channel_stack(self, fov: str, channel: str):
+        """Get the channel from a multi-channel tiff
+        Args:
+            fov (str): name of a fov
+            channel (str): channel name
+            data_format (str): data format
+        Returns:
+            channel (np.array): channel image
+        """
+        idx = self.fovs.index(fov)
+        fov_path = self.fov_paths[idx]
+        self.img_reader = LazyOMETIFFReader(fov_path)
+        return np.squeeze(self.img_reader.get_channel(channel))
+    
+    def get_segmentation(self, fov: str):
+        """Get the instance mask for a fov
+        Args:
+            fov (str): name of a fov
+        Returns:
+            instance_mask (np.array): instance mask
+        """
+        idx = self.fovs.index(fov)
+        fov_path = self.fov_paths[idx]
+        instance_path = self.segmentation_naming_convention(fov_path)
+        instance_mask = np.squeeze(io.imread(instance_path))
+        return instance_mask
 
 
 def prepare_input_data(mplex_img, instance_mask):
@@ -170,19 +284,17 @@ def test_time_aug(
 
 
 def predict_fovs(
-        nimbus, fov_paths, normalization_dict, segmentation_naming_convention, output_dir,
-        suffix, include_channels=[], save_predictions=True, half_resolution=False, batch_size=4,
-        test_time_augmentation=True
+        nimbus, dataset: MultiplexDataset, normalization_dict: dict, output_dir: str,
+        suffix: str="tiff", save_predictions: bool=True, half_resolution: bool=False,
+        batch_size: int=4, test_time_augmentation: bool=True
     ):
     """Predicts the segmentation map for each mplex image in each fov
     Args:
         nimbus (Nimbus): nimbus object
-        fov_paths (list): list of fov paths
+        dataset (MultiplexDataset): dataset object
         normalization_dict (dict): dict with channel names as keys and norm factors  as values
-        segmentation_naming_convention (function): function to get instance mask path from fov path
         output_dir (str): path to output dir
         suffix (str): suffix of mplex images
-        include_channels (list): list of channels to include
         save_predictions (bool): whether to save predictions
         half_resolution (bool): whether to use half resolution
         batch_size (int): batch size
@@ -191,22 +303,15 @@ def predict_fovs(
         cell_table (pd.DataFrame): cell table with predicted confidence scores per fov and cell
     """
     fov_dict_list = []
-    for fov_path in fov_paths:
+    for fov_path, fov in zip(dataset.fov_paths, dataset.fovs):
         print(f"Predicting {fov_path}...")
         out_fov_path = os.path.join(
             os.path.normpath(output_dir), os.path.basename(fov_path)
         )
         df_fov = pd.DataFrame()
-        instance_path = segmentation_naming_convention(fov_path)
-        instance_mask = np.squeeze(io.imread(instance_path))
-        for channel in tqdm(os.listdir(fov_path)):
-            channel_path = os.path.join(fov_path, channel)
-            channel_ = channel.split(".")[0]
-            if not channel.endswith(suffix) or (
-                include_channels != [] and channel_ not in include_channels
-                ):
-                continue
-            mplex_img = np.squeeze(io.imread(channel_path))
+        instance_mask = dataset.get_segmentation(fov)
+        for channel_name in tqdm(dataset.channels):
+            mplex_img = dataset.get_channel(fov, channel_name)
             input_data = prepare_input_data(mplex_img, instance_mask)
             if half_resolution:
                 scale = 0.5
@@ -219,13 +324,13 @@ def predict_fovs(
                 input_data = np.stack([img, binary_mask], axis=0)[np.newaxis,...]
             if test_time_augmentation:
                 prediction = test_time_aug(
-                    input_data, channel, nimbus, normalization_dict, batch_size=batch_size
+                    input_data, channel_name, nimbus, normalization_dict, batch_size=batch_size
                 )
             else:
                 prediction = nimbus.predict_segmentation(
                     input_data,
                     preprocess_kwargs={
-                        "normalize": True, "marker": channel,
+                        "normalize": True, "marker": channel_name,
                         "normalization_dict": normalization_dict
                     },
                 )
@@ -236,12 +341,12 @@ def predict_fovs(
             if df_fov.empty:
                 df_fov["label"] = df["label"]
                 df_fov["fov"] = os.path.basename(fov_path)
-            df_fov[channel.split(".")[0]] = df["intensity_mean"]
+            df_fov[channel_name] = df["intensity_mean"]
             if save_predictions:
                 os.makedirs(out_fov_path, exist_ok=True)
                 pred_int = (prediction*255.0).astype(np.uint8)
                 io.imwrite(
-                    os.path.join(out_fov_path, channel), pred_int, photometric="minisblack",
+                    os.path.join(out_fov_path, channel_name + suffix), pred_int, photometric="minisblack",
                     # compress=0, 
                 )
         fov_dict_list.append(df_fov)
@@ -276,41 +381,40 @@ def nimbus_preprocess(image, **kwargs):
     return output
 
 
-def calculate_normalization_ome(ome_path, quantile, include_channels):
+def calculate_normalization(dataset: MultiplexDataset, quantile: float, include_channels: list):
     """Calculates the normalization values for a given ome file
     Args:
-        ome_path (str): path to ome file
+        dataset (MultiplexDataset): dataset object
         quantile (float): quantile to use for normalization
         include_channels (list): list of channels to include
     Returns:
         normalization_values (dict): dict with channel names as keys and norm factors  as values
     """
-    reader = OMETIFFReader(fpath=ome_path)
-    img_array, metadata, _ = reader.read()
-    channel_names = list(metadata["Channels"].keys())
+    
+    channel_names = dataset.channels
     if not include_channels:
         include_channels = channel_names
+    if isinstance(include_channels, str):
+        include_channels = [include_channels]
     # check if include_channels are included in ome file metadata
-    for channel in include_channels:
-        if channel not in channel_names:
-            raise ValueError(f"Channel {channel} not found in ome file metadata.")
+    misc_utils.verify_in_list(include_channels=include_channels, dataset_channels=channel_names)
     normalization_values = {}
     for channel in include_channels:
-        idx = channel_names.index(channel)
-        mplex_img = img_array[idx]
+        mplex_img = dataset.get_channel(dataset.fovs[0], channel)
         mplex_img = mplex_img.astype(np.float32)
         foreground = mplex_img[mplex_img > 0]
         normalization_values[channel] = np.quantile(foreground, quantile)
     return normalization_values
 
 
-def prepare_normalization_dict_ome(
-        fov_paths, output_dir, quantile=0.999, include_channels=[], n_subset=10, n_jobs=1,
-        output_name="normalization_dict.json"
+def prepare_normalization_dict(
+        dataset: MultiplexDataset, output_dir: str, quantile: float=0.999,
+        include_channels: list=[], n_subset: int=10, n_jobs: int=1,
+        output_name: str="normalization_dict.json"
     ):
     """Prepares the normalization dict for a list of ome.tif fovs
     Args:
-        fov_paths (list): list of paths to fovs
+        MultiplexDataset (list): list of paths to fovs
         output_dir (str): path to output directory
         quantile (float): quantile to use for normalization
         exclude_channels (list): list of channels to exclude
@@ -321,19 +425,26 @@ def prepare_normalization_dict_ome(
         normalization_dict (dict): dict with channel names as keys and norm factors  as values
     """
     normalization_dict = {}
+    fov_paths = dataset.fov_paths
     if n_subset is not None:
         random.shuffle(fov_paths)
         fov_paths = fov_paths[:n_subset]
     print("Iterate over fovs...")
     if n_jobs > 1:
         normalization_values = Parallel(n_jobs=n_jobs)(
-            delayed(calculate_normalization_ome)(ome_path, quantile, include_channels)
-            for ome_path in fov_paths
+            delayed(calculate_normalization)(
+                MultiplexDataset(
+                    [fov_path], dataset.segmentation_naming_convention, dataset.suffix
+                ), quantile, include_channels)
+            for fov_path in fov_paths
         )
     else:
         normalization_values = [
-            calculate_normalization_ome(ome_path, quantile, include_channels)
-            for ome_path in fov_paths
+            calculate_normalization(
+                MultiplexDataset(
+                    [fov_path], dataset.segmentation_naming_convention, dataset.suffix
+                ), quantile, include_channels)
+            for fov_path in fov_paths
         ]
     for norm_dict in normalization_values:
         for channel, normalization_value in norm_dict.items():
@@ -348,84 +459,3 @@ def prepare_normalization_dict_ome(
     with open(os.path.join(output_dir, output_name), 'w') as f:
         json.dump(normalization_dict, f)
     return normalization_dict
-
-
-def predict_ome_fovs(
-        nimbus, fov_paths, normalization_dict, segmentation_naming_convention, output_dir,
-        suffix, include_channels=[], save_predictions=True, half_resolution=False, batch_size=4,
-        test_time_augmentation=True
-    ):
-    """Predicts the segmentation map for each mplex channel in each ome.tif fov
-    Args:
-        nimbus (Nimbus): nimbus object
-        fov_paths (list): list of fov paths
-        normalization_dict (dict): dict with channel names as keys and norm factors  as values
-        segmentation_naming_convention (function): function to get instance mask path from fov path
-        output_dir (str): path to output dir
-        suffix (str): suffix of mplex images
-        include_channels (list): list of channels to include
-        save_predictions (bool): whether to save predictions
-        half_resolution (bool): whether to use half resolution
-        batch_size (int): batch size
-        test_time_augmentation (bool): whether to use test time augmentation
-    Returns:
-        cell_table (pd.DataFrame): cell table with predicted confidence scores per fov and cell
-    """
-    fov_dict_list = []
-    for fov_path in fov_paths:
-        print(f"Predicting {fov_path}...")
-        out_fov_path = os.path.join(
-            os.path.normpath(output_dir), os.path.basename(fov_path).split(".")[0]
-        )
-        df_fov = pd.DataFrame()
-        reader = OMETIFFReader(fpath=fov_path)
-        img_array, metadata, _ = reader.read()
-        channel_names = list(metadata["Channels"].keys())
-        instance_path = segmentation_naming_convention(fov_path)
-        instance_mask = np.squeeze(io.imread(instance_path))
-        if not include_channels:
-            include_channels = channel_names
-        for channel in tqdm(include_channels):
-            idx = channel_names.index(channel)
-            mplex_img = np.squeeze(img_array[idx])
-            input_data = prepare_input_data(mplex_img, instance_mask)
-            if half_resolution:
-                scale = 0.5
-                input_data = np.squeeze(input_data)
-                _, h,w = input_data.shape
-                img = cv2.resize(input_data[0], [int(h*scale), int(w*scale)])
-                binary_mask = cv2.resize(
-                    input_data[1], [int(h*scale), int(w*scale)], interpolation=0
-                )
-                input_data = np.stack([img, binary_mask], axis=0)[np.newaxis,...]
-            if test_time_augmentation:
-                prediction = test_time_aug(
-                    input_data, channel, nimbus, normalization_dict, batch_size=batch_size
-                )
-
-            else:
-                prediction = nimbus.predict_segmentation(
-                    input_data,
-                    preprocess_kwargs={
-                        "normalize": True, "marker": channel,
-                        "normalization_dict": normalization_dict
-                    },
-                )
-            prediction = np.squeeze(prediction)
-            if half_resolution:
-                prediction = cv2.resize(prediction, (h, w))
-            df = pd.DataFrame(segment_mean(instance_mask, prediction))
-            if df_fov.empty:
-                df_fov["label"] = df["label"]
-                df_fov["fov"] = os.path.basename(fov_path)
-            df_fov[channel] = df["intensity_mean"]
-            if save_predictions:
-                os.makedirs(out_fov_path, exist_ok=True)
-                pred_int = (prediction*255.0).astype(np.uint8)
-                io.imwrite(
-                    os.path.join(out_fov_path, channel+".tiff"), pred_int, photometric="minisblack",
-                    # compress=0, 
-                )
-        fov_dict_list.append(df_fov)
-    cell_table = pd.concat(fov_dict_list, ignore_index=True)
-    return cell_table

@@ -1,6 +1,6 @@
 from nimbus_inference.cell_analyzer import CellAnalyzer
 from nimbus_inference.nimbus import Nimbus, prep_naming_convention
-from tests.test_utils import prepare_ome_tif_data, prepare_tif_data
+from tests.test_utils import prepare_tif_data
 import pandas as pd
 import numpy as np
 import tempfile
