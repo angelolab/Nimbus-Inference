@@ -119,15 +119,11 @@ def test_calculate_normalization():
         )
         ome_dataset = MultiplexDataset(ome_fov_paths, suffix=".ome.tiff")
         for dataset in [tif_dataset, ome_dataset]:
-            norm_dict = calculate_normalization(dataset, 0.999, include_channels=[channel])
+            norm_dict = calculate_normalization(dataset, 0.999)
             channel_out, norm_val = list(norm_dict.items())[0]
             # test if we get the correct channel and normalization value
             assert channel_out == channel
             assert np.isclose(norm_val, 0.5, 0.01)
-        
-        # test if ValueError is raised if include_channels are not in the dataset
-        with pytest.raises(ValueError):
-            calculate_normalization(dataset, 0.999, include_channels=["CD42", "CD56"])
 
 
 def test_prepare_normalization_dict():

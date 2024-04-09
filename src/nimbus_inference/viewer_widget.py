@@ -25,8 +25,7 @@ class NimbusViewer(object):
         self.dataset = dataset
         self.output_dir = output_dir
         self.suffix = suffix
-        self.fov_names = self.dataset.fovs
-        self.fov_names = natsorted(self.fov_names)
+        self.fov_names = natsorted(copy(self.dataset.fovs))
         self.update_button = widgets.Button(description="Update Image")
         self.update_button.on_click(self.update_button_click)
         self.overlay_checkbox = widgets.Checkbox(
@@ -65,7 +64,7 @@ class NimbusViewer(object):
         Args:
             change (dict): Change dictionary from ipywidgets.
         """
-        channels = natsorted(self.dataset.channels)
+        channels = natsorted(copy(self.dataset.channels))
         self.red_select.options = channels
         self.green_select.options = channels
         self.blue_select.options = channels
@@ -236,6 +235,10 @@ class NimbusViewer(object):
         if not non_none:
             return
         composite_image = self.create_composite_image(path_dict)
+        composite_image, _ = self.overlay(
+            composite_image, add_overlay=True
+        )
+
         in_composite_image = self.create_composite_from_dataset(in_path_dict)
         in_composite_image, seg_boundaries = self.overlay(
             in_composite_image, add_boundaries=self.overlay_checkbox.value

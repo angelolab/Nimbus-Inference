@@ -6,16 +6,31 @@ import random
 import numpy as np
 import pandas as pd
 import imageio as io
+from copy import copy
 from tqdm.autonotebook import tqdm
 from joblib import Parallel, delayed
 from joblib.externals.loky import get_reusable_executor
 from skimage.segmentation import find_boundaries
 from skimage.measure import regionprops_table
 from pyometiff import OMETIFFReader
+from pyometiff.omexml import OMEXML
 from alpineer import io_utils, misc_utils
 from typing import Callable
 import tifffile
 import zarr
+import sys, os
+import logging
+import os, sys
+
+
+class HidePrints:
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        sys.stdout = open(os.devnull, 'w')
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout.close()
+        sys.stdout = self._original_stdout
 
 
 class LazyOMETIFFReader(OMETIFFReader):
@@ -37,7 +52,9 @@ class LazyOMETIFFReader(OMETIFFReader):
         with tifffile.TiffFile(str(self.fpath)) as tif:
             if tif.is_ome:
                 omexml_string = tif.ome_metadata
-                return self.parse_metadata(omexml_string)
+                with HidePrints():
+                    metadata = self.parse_metadata(omexml_string)
+                return metadata
             else:
                 raise ValueError("File is not an OME-TIFF file.")
 
@@ -71,8 +88,8 @@ class LazyOMETIFFReader(OMETIFFReader):
         idx = self.channels.index(channel_name)
         with tifffile.imread(str(self.fpath), aszarr=True) as store:
             z = zarr.open(store, mode='r')
-            # correct DimOrder, often DimOrder is TZCYX, but image is stored as CYX, thus we remove
-            # the trailing dimensions
+            # correct DimOrder, often DimOrder is TZCYX, but image is stored as CYX,
+            # thus we remove the trailing dimensions
             dim_order = self.metadata["DimOrder"]
             dim_order = dim_order[-len(z.shape):]
             channel_idx = dim_order.find("C")
@@ -84,7 +101,7 @@ class LazyOMETIFFReader(OMETIFFReader):
 class MultiplexDataset():
     def __init__(
             self, fov_paths: list, segmentation_naming_convention: Callable = None,
-            suffix: str = ".tiff"
+            include_channels: list = [], suffix: str = ".tiff", silent=False,
         ):
         """Multiplex dataset class that gives a common interface for data loading of multiplex
         datasets stored as individual channel images in folders or as multi-channel tiffs.
@@ -92,14 +109,30 @@ class MultiplexDataset():
             fov_paths (list): list of paths to fovs
             segmentation_naming_convention (function): function to get instance mask path from fov
             path
+            suffix (str): suffix of channel images
+            silent (bool): whether to print messages
         """
         self.fov_paths = fov_paths
         self.segmentation_naming_convention = segmentation_naming_convention
         self.suffix = suffix
-        self.check_inputs()
+        self.silent = silent
+        self.include_channels = include_channels
         self.multi_channel = self.is_multi_channel_tiff(fov_paths[0])
-        self.fovs = self.get_fovs()
         self.channels = self.get_channels()
+        self.check_inputs()
+        self.fovs = self.get_fovs()
+        self.channels = self.filter_channels(self.channels)
+
+    def filter_channels(self, channels):
+        """Filter channels based on include_channels
+        Args:
+            channels (list): list of channel names
+        Returns:
+            channels (list): filtered list of channel names
+        """
+        if self.include_channels:
+            return [channel for channel in channels if channel in self.include_channels]
+        return channels
 
     def check_inputs(self):
         """check inputs for Nimbus model"""
@@ -107,7 +140,13 @@ class MultiplexDataset():
         if not isinstance(self.fov_paths, (list, tuple)):
             self.fov_paths = [self.fov_paths]
         io_utils.validate_paths(self.fov_paths)
-        print("All inputs are valid")
+        if isinstance(self.include_channels, str):
+            self.include_channels = [self.include_channels]
+        misc_utils.verify_in_list(
+            include_channels=self.include_channels, dataset_channels=self.channels
+        )
+        if not self.silent:
+            print("All inputs are valid")
 
     def __len__(self):
         """Return the number of fovs in the dataset"""
@@ -143,7 +182,7 @@ class MultiplexDataset():
         return [os.path.basename(fov).replace(self.suffix, "") for fov in self.fov_paths]
     
     def get_channel(self, fov: str, channel: str):
-        """Get the channel from a fov
+        """Get a channel from a fov
         Args:
             fov (str): name of a fov
             channel (str): channel name
@@ -156,7 +195,7 @@ class MultiplexDataset():
             return self.get_channel_single(fov, channel)
 
     def get_channel_single(self, fov: str, channel: str):
-        """Get the channel from a fov stored as a folder with individual channel images
+        """Get a channel from a fov stored as a folder with individual channel images
         Args:
             fov (str): name of a fov
             channel (str): channel name
@@ -170,7 +209,7 @@ class MultiplexDataset():
         return channel
 
     def get_channel_stack(self, fov: str, channel: str):
-        """Get the channel from a multi-channel tiff
+        """Get a channel from a multi-channel tiff
         Args:
             fov (str): name of a fov
             channel (str): channel name
@@ -235,7 +274,7 @@ def test_time_aug(
     Args:
         input_data (np.array): input data for segmentation model, mplex_img and binary mask
         channel (str): channel name
-        app (tf.keras.Model): segmentation model
+        app (Nimbus): segmentation model
         normalization_dict (dict): dict with channel names as keys and norm factors  as values
         rotate (bool): whether to rotate
         flip (bool): whether to flip
@@ -381,25 +420,16 @@ def nimbus_preprocess(image, **kwargs):
     return output
 
 
-def calculate_normalization(dataset: MultiplexDataset, quantile: float, include_channels: list):
+def calculate_normalization(dataset: MultiplexDataset, quantile: float):
     """Calculates the normalization values for a given ome file
     Args:
         dataset (MultiplexDataset): dataset object
         quantile (float): quantile to use for normalization
-        include_channels (list): list of channels to include
     Returns:
         normalization_values (dict): dict with channel names as keys and norm factors  as values
     """
-    
-    channel_names = dataset.channels
-    if not include_channels:
-        include_channels = channel_names
-    if isinstance(include_channels, str):
-        include_channels = [include_channels]
-    # check if include_channels are included in ome file metadata
-    misc_utils.verify_in_list(include_channels=include_channels, dataset_channels=channel_names)
     normalization_values = {}
-    for channel in include_channels:
+    for channel in dataset.channels:
         mplex_img = dataset.get_channel(dataset.fovs[0], channel)
         mplex_img = mplex_img.astype(np.float32)
         foreground = mplex_img[mplex_img > 0]
@@ -408,16 +438,14 @@ def calculate_normalization(dataset: MultiplexDataset, quantile: float, include_
 
 
 def prepare_normalization_dict(
-        dataset: MultiplexDataset, output_dir: str, quantile: float=0.999,
-        include_channels: list=[], n_subset: int=10, n_jobs: int=1,
-        output_name: str="normalization_dict.json"
+        dataset: MultiplexDataset, output_dir: str, quantile: float=0.999, n_subset: int=10,
+        n_jobs: int=1, output_name: str="normalization_dict.json"
     ):
     """Prepares the normalization dict for a list of ome.tif fovs
     Args:
         MultiplexDataset (list): list of paths to fovs
         output_dir (str): path to output directory
         quantile (float): quantile to use for normalization
-        exclude_channels (list): list of channels to exclude
         n_subset (int): number of fovs to use for normalization
         n_jobs (int): number of jobs to use for joblib multiprocessing
         output_name (str): name of output file
@@ -425,7 +453,7 @@ def prepare_normalization_dict(
         normalization_dict (dict): dict with channel names as keys and norm factors  as values
     """
     normalization_dict = {}
-    fov_paths = dataset.fov_paths
+    fov_paths = copy(dataset.fov_paths)
     if n_subset is not None:
         random.shuffle(fov_paths)
         fov_paths = fov_paths[:n_subset]
@@ -434,16 +462,18 @@ def prepare_normalization_dict(
         normalization_values = Parallel(n_jobs=n_jobs)(
             delayed(calculate_normalization)(
                 MultiplexDataset(
-                    [fov_path], dataset.segmentation_naming_convention, dataset.suffix
-                ), quantile, include_channels)
+                    [fov_path], dataset.segmentation_naming_convention, dataset.channels,
+                    dataset.suffix, True
+                ), quantile)
             for fov_path in fov_paths
         )
     else:
         normalization_values = [
             calculate_normalization(
                 MultiplexDataset(
-                    [fov_path], dataset.segmentation_naming_convention, dataset.suffix
-                ), quantile, include_channels)
+                    [fov_path], dataset.segmentation_naming_convention, dataset.channels,
+                    dataset.suffix, True
+                ), quantile)
             for fov_path in fov_paths
         ]
     for norm_dict in normalization_values:

@@ -66,7 +66,7 @@ def prep_naming_convention(deepcell_output_dir):
         Returns:
             seg_path (str): paths to segmentation fovs
         """
-        fov_name = os.path.basename(fov_path)
+        fov_name = os.path.basename(fov_path).replace(".ome.tiff", "")
         return os.path.join(deepcell_output_dir, fov_name + "_whole_cell.tiff")
 
     return segmentation_naming_convention
@@ -77,15 +77,14 @@ class Nimbus(nn.Module):
 
     def __init__(
         self, dataset: MultiplexDataset, output_dir: str, save_predictions: bool=True,
-        include_channels: list=[], half_resolution: bool=True, batch_size: int=4,
-        test_time_aug: bool=True, input_shape: list=[1024, 1024], device: str="auto",
+        half_resolution: bool=True, batch_size: int=4, test_time_aug: bool=True,
+        input_shape: list=[1024, 1024], device: str="auto",
     ):
         """Initializes a Nimbus Application.
         Args:
             dataset (MultiplexDataset): Path to directory containing fovs.
             output_dir (str): Path to directory to save output.
             save_predictions (bool): Whether to save predictions.
-            include_channels (list): List of channels to include in analysis.
             half_resolution (bool): Whether to run model on half resolution images.
             batch_size (int): Batch size for model inference.
             test_time_aug (bool): Whether to use test time augmentation.
@@ -96,7 +95,6 @@ class Nimbus(nn.Module):
         """
         super(Nimbus, self).__init__()
         self.dataset = dataset
-        self.include_channels = include_channels
         self.output_dir = output_dir
         self.half_resolution = half_resolution
         self.save_predictions = save_predictions
@@ -123,8 +121,6 @@ class Nimbus(nn.Module):
         # check if output_dir exists
         io_utils.validate_paths([self.output_dir])
 
-        if isinstance(self.include_channels, str):
-            self.include_channels = [self.include_channels]
         self.checked_inputs = True
         print("All inputs are valid.")
 
@@ -173,11 +169,9 @@ class Nimbus(nn.Module):
         else:
             n_jobs = os.cpu_count() if multiprocessing else 1
             self.normalization_dict = prepare_normalization_dict(
-                self.dataset, self.output_dir, quantile, self.include_channels, n_subset,
+                self.dataset, self.output_dir, quantile, n_subset,
                 n_jobs
             )
-        if self.include_channels == []:
-            self.include_channels = list(self.normalization_dict.keys())
 
     def predict_fovs(self):
         """Predicts cell classification for input data.
@@ -193,13 +187,12 @@ class Nimbus(nn.Module):
         print("Available GPUs: ", gpus)
         print("Predictions will be saved in {}".format(self.output_dir))
         print("Iterating through fovs will take a while...")
-        if self.suffix.lower() in [".ome.tif", ".ome.tiff"]:
-            self.cell_table = predict_fovs(
-                nimbus=self, dataset=self.dataset, output_dir=self.output_dir,
-                normalization_dict=self.normalization_dict, save_predictions=self.save_predictions,
-                half_resolution=self.half_resolution, batch_size=self.batch_size,
-                test_time_augmentation=self.test_time_aug, suffix=self.suffix,
-            )
+        self.cell_table = predict_fovs(
+            nimbus=self, dataset=self.dataset, output_dir=self.output_dir,
+            normalization_dict=self.normalization_dict, save_predictions=self.save_predictions,
+            half_resolution=self.half_resolution, batch_size=self.batch_size,
+            test_time_augmentation=self.test_time_aug, suffix=self.dataset.suffix,
+        )
         self.cell_table.to_csv(os.path.join(self.output_dir, "nimbus_cell_table.csv"), index=False)
         return self.cell_table
 
