@@ -38,6 +38,7 @@ dependencies = [
     "ipywidgets",
     "natsort",
     "ipython",
+    "zarr",
 ]
 
 

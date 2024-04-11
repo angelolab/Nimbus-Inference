@@ -1,9 +1,10 @@
-from nimbus_inference.utils import prepare_normalization_dict, calculate_normalization
-from nimbus_inference.utils import predict_fovs, predict_ome_fovs, prepare_input_data
+from nimbus_inference.utils import (prepare_normalization_dict, calculate_normalization,
+predict_fovs, prepare_input_data, MultiplexDataset, LazyOMETIFFReader)
 from nimbus_inference.utils import test_time_aug as tt_aug
 from nimbus_inference.nimbus import Nimbus
 from skimage import io
 from pyometiff import OMETIFFWriter
+import pytest
 import numpy as np
 import tempfile
 import torch
@@ -56,25 +57,30 @@ def prepare_tif_data(num_samples, temp_dir, selected_markers, random=False, std=
 def prepare_ome_tif_data(num_samples, temp_dir, selected_markers, random=False, std=1):
     np.random.seed(42)
     metadata_dict = {
-        "PhysicalSizeX" : "0.88",
+        "SizeX" : 256,
+        "SizeY" : 256,
+        "SizeC" : len(selected_markers) + 3,
+        "PhysicalSizeX" : 0.5,
         "PhysicalSizeXUnit" : "µm",
-        "PhysicalSizeY" : "0.88",
+        "PhysicalSizeY" : 0.5,
         "PhysicalSizeYUnit" : "µm",
-        "PhysicalSizeZ" : "3.3",
-        "PhysicalSizeZUnit" : "µm",
     }
-
+    fov_paths = []
+    inst_paths = []
+    if isinstance(std, (int, float)) or len(std) != len(selected_markers):
+        std = [std] * len(selected_markers)
     for i in range(num_samples):
         metadata_dict["Channels"] = {}
         channels = []
-        for marker in zip(selected_markers):
+        for j, (marker, s) in enumerate(zip(selected_markers, std)):
             if random:
-                img = np.random.rand(256, 256) * std
+                img = np.random.rand(256, 256) * s
             else:
                 img = np.ones([256, 256])
-                channels.append(img)
+            channels.append(img)
             metadata_dict["Channels"][marker] = {
                 "Name" : marker,
+                "ID": str(j),
                 "SamplesPerPixel": 1,
             }
         channel_data = np.stack(channels, axis=0)
@@ -87,49 +93,74 @@ def prepare_ome_tif_data(num_samples, temp_dir, selected_markers, random=False, 
             metadata=metadata_dict,
             explicit_tiffdata=False)
         writer.write()
-    return None
+        deepcell_dir = os.path.join(temp_dir, "deepcell_output")
+        os.makedirs(deepcell_dir, exist_ok=True)
+        inst_path = os.path.join(deepcell_dir, f"fov_{i}_whole_cell.tiff")
+        io.imsave(
+                inst_path, np.array(
+                    [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]
+                ).repeat(64, axis=1).repeat(64, axis=0)
+        )
+        fov_paths.append(sample_name)
+        inst_paths.append(inst_path)
+    return fov_paths, inst_paths
 
 
 def test_calculate_normalization():
     with tempfile.TemporaryDirectory() as temp_dir:
-        fov_paths, _ = prepare_tif_data(
+        # test for single channel data
+        tif_fov_paths, _ = prepare_tif_data(
             num_samples=1, temp_dir=temp_dir, selected_markers=["CD4"], random=True, std=[0.5]
         )
         channel = "CD4"
-        channel_path = os.path.join(fov_paths[0], channel + ".tiff")
-        channel_out, norm_val = calculate_normalization(channel_path, 0.999)
-        # test if we get the correct channel and normalization value
-        assert channel_out == channel
-        assert np.isclose(norm_val, 0.5, 0.01)
+        tif_dataset = MultiplexDataset(tif_fov_paths, suffix=".tiff")
+        ome_fov_paths, _ = prepare_ome_tif_data(
+            num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"], random=True, std=[0.5]
+        )
+        ome_dataset = MultiplexDataset(ome_fov_paths, suffix=".ome.tiff")
+        for dataset in [tif_dataset, ome_dataset]:
+            norm_dict = calculate_normalization(dataset, 0.999)
+            channel_out, norm_val = list(norm_dict.items())[0]
+            # test if we get the correct channel and normalization value
+            assert channel_out == channel
+            assert np.isclose(norm_val, 0.5, 0.01)
 
 
 def test_prepare_normalization_dict():
     with tempfile.TemporaryDirectory() as temp_dir:
         scales = [0.5, 1.0, 1.5, 2.0, 5.0]
         channels = ["CD4", "CD11c", "CD14", "CD56", "CD57"]
-        fov_paths, _ = prepare_tif_data(
+        tif_fov_paths, _ = prepare_tif_data(
             num_samples=5, temp_dir=temp_dir, selected_markers=channels, random=True, std=scales
         )
-        normalization_dict = prepare_normalization_dict(
-            fov_paths, temp_dir, quantile=0.999, n_subset=10, n_jobs=1,
-            output_name="normalization_dict.json"
+        tif_dataset = MultiplexDataset(tif_fov_paths, suffix=".tiff")
+        
+        # test if everything works for multi channel data
+        ome_fov_paths, _ = prepare_ome_tif_data(
+            num_samples=5, temp_dir=temp_dir, selected_markers=channels, random=True, std=scales
         )
-        # test if normalization dict got saved
-        assert os.path.exists(os.path.join(temp_dir, "normalization_dict.json"))
-        assert normalization_dict == json.load(
-            open(os.path.join(temp_dir, "normalization_dict.json"))
-        )
-        # test if normalization dict is correct
-        for channel, scale in zip(channels, scales):
-            assert np.isclose(normalization_dict[channel], scale, 0.01)
+        ome_dataset = MultiplexDataset(ome_fov_paths, suffix=".ome.tiff")
+        for dataset in [tif_dataset, ome_dataset]:
+            normalization_dict = prepare_normalization_dict(
+                dataset, temp_dir, quantile=0.999, n_subset=10, n_jobs=1,
+                output_name="normalization_dict.json"
+            )
+            # test if normalization dict got saved
+            assert os.path.exists(os.path.join(temp_dir, "normalization_dict.json"))
+            assert normalization_dict == json.load(
+                open(os.path.join(temp_dir, "normalization_dict.json"))
+            )
+            # test if normalization dict is correct
+            for channel, scale in zip(channels, scales):
+                assert np.isclose(normalization_dict[channel], scale, 0.01)
 
-        # test if multiprocessing yields approximately the same results
-        normalization_dict_mp = prepare_normalization_dict(
-            fov_paths, temp_dir, quantile=0.999, n_subset=10, n_jobs=2,
-            output_name="normalization_dict.json"
-        )
-        for key in normalization_dict.keys():
-            assert np.isclose(normalization_dict[key], normalization_dict_mp[key], 1e-6)
+            # test if multiprocessing yields approximately the same results
+            normalization_dict_mp = prepare_normalization_dict(
+                dataset, temp_dir, quantile=0.999, n_subset=10, n_jobs=2,
+                output_name="normalization_dict.json"
+            )
+            for key in normalization_dict.keys():
+                assert np.isclose(normalization_dict[key], normalization_dict_mp[key], 1e-6)
 
 
 def test_prepare_input_data():
@@ -161,9 +192,8 @@ def test_tt_aug():
             num_samples=1, temp_dir=temp_dir, selected_markers=[channel]
         )
         output_dir = os.path.join(temp_dir, "nimbus_output")
-        nimbus = Nimbus(
-            fov_paths, segmentation_naming_convention, output_dir,
-        )
+        dataset = MultiplexDataset(fov_paths, segmentation_naming_convention, suffix=".tiff")
+        nimbus = Nimbus(dataset, output_dir)
         nimbus.prepare_normalization_dict()
         mplex_img = io.imread(os.path.join(fov_paths[0], channel+".tiff"))
         instance_mask = io.imread(inst_paths[0])
@@ -206,16 +236,14 @@ def test_predict_fovs():
         fov_paths, _ = prepare_tif_data(
             num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"]
         )
+        dataset = MultiplexDataset(fov_paths, segmentation_naming_convention, suffix=".tiff")
         output_dir = os.path.join(temp_dir, "nimbus_output")
-        nimbus = Nimbus(
-            fov_paths, segmentation_naming_convention, output_dir,
-        )
+        nimbus = Nimbus(dataset, output_dir)
         output_dir = os.path.join(temp_dir, "nimbus_output")
         nimbus.prepare_normalization_dict()
         cell_table = predict_fovs(
-            nimbus=nimbus, fov_paths=fov_paths, output_dir=output_dir,
-            normalization_dict=nimbus.normalization_dict,
-            segmentation_naming_convention=segmentation_naming_convention, suffix=".tiff",
+            nimbus=nimbus, dataset=dataset, output_dir=output_dir,
+            normalization_dict=nimbus.normalization_dict, suffix=".tiff",
             save_predictions=False, half_resolution=True,
         )
         # check if we get the correct number of cells
@@ -230,10 +258,64 @@ def test_predict_fovs():
         #
         # run again with save_predictions=True and check if predictions get written to output_dir
         cell_table = predict_fovs(
-            nimbus=nimbus, fov_paths=fov_paths, output_dir=output_dir,
-            normalization_dict=nimbus.normalization_dict,
-            segmentation_naming_convention=segmentation_naming_convention, suffix=".tiff",
+            nimbus=nimbus, dataset=dataset, output_dir=output_dir,
+            normalization_dict=nimbus.normalization_dict, suffix=".tiff",
             save_predictions=True, half_resolution=True,
         )
         assert os.path.exists(os.path.join(output_dir, "fov_0", "CD4.tiff"))
         assert os.path.exists(os.path.join(output_dir, "fov_0", "CD56.tiff"))
+
+
+def test_LazyOMETIFFReader():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        fov_paths, _ = prepare_ome_tif_data(
+        num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"]
+        )
+        reader = LazyOMETIFFReader(fov_paths[0])
+        assert hasattr(reader, "metadata")
+        assert reader.channels == ["CD4", "CD56"]
+        cd4_channel = reader.get_channel("CD4")
+        cd56_channel = reader.get_channel("CD56")
+        assert cd4_channel.shape == (256, 256)
+        assert cd56_channel.shape == (256, 256)
+
+
+def test_MultiplexDataset():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        def segmentation_naming_convention(fov_path):
+            temp_dir_, fov_ = os.path.split(fov_path)
+            fov_ = fov_.split(".")[0]
+            return os.path.join(temp_dir_, "deepcell_output", fov_ + "_whole_cell.tiff")
+
+        fov_paths, _ = prepare_ome_tif_data(
+        num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"]
+        )
+        # check if check inputs raises error when inputs are incorrect
+        with pytest.raises(FileNotFoundError):
+            dataset = MultiplexDataset(["abc"], segmentation_naming_convention, suffix=".ome.tiff")
+        # check if we get the correct channels and fov_paths
+        dataset = MultiplexDataset(fov_paths, segmentation_naming_convention, suffix=".ome.tiff")
+        assert len(dataset) == 1
+        assert dataset.channels == ["CD4", "CD56"]
+        assert dataset.fov_paths == fov_paths
+        assert dataset.multi_channel == True
+        cd4_channel = io.imread(fov_paths[0])[0]
+        cd4_channel_ = dataset.get_channel(fov="fov_0", channel="CD4")
+        assert np.alltrue(cd4_channel == cd4_channel_)
+        fov_0_seg = io.imread(segmentation_naming_convention(fov_paths[0]))
+        fov_0_seg_ = dataset.get_segmentation(fov="fov_0")
+        assert np.alltrue(fov_0_seg == fov_0_seg_)
+
+        # test everything again with single channel data        
+        fov_paths, _ = prepare_tif_data(
+            num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"]
+        )
+        dataset = MultiplexDataset(fov_paths, segmentation_naming_convention, suffix=".tiff")
+        assert len(dataset) == 1
+        assert dataset.channels == ["CD4", "CD56"]
+        assert dataset.fov_paths == fov_paths
+        assert dataset.multi_channel == False
+        cd4_channel_ = dataset.get_channel(fov="fov_0", channel="CD4")
+        assert np.alltrue(cd4_channel == cd4_channel_)
+        fov_0_seg_ = dataset.get_segmentation(fov="fov_0")
+        assert np.alltrue(fov_0_seg == fov_0_seg_)

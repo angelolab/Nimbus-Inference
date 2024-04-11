@@ -1,5 +1,6 @@
 from tests.test_utils import prepare_ome_tif_data, prepare_tif_data
 import tempfile
+from nimbus_inference.utils import MultiplexDataset
 from nimbus_inference.nimbus import Nimbus, prep_naming_convention
 from nimbus_inference.unet import UNet
 from skimage.data import astronaut
@@ -15,16 +16,15 @@ def test_check_inputs():
         selected_markers = ["CD45", "CD3", "CD8", "ChyTr"]
         fov_paths, _ = prepare_tif_data(num_samples, temp_dir, selected_markers)
         naming_convention = prep_naming_convention(os.path.join(temp_dir, "deepcell_output"))
-        nimbus = Nimbus(
-            fov_paths=fov_paths, segmentation_naming_convention=naming_convention,
-            output_dir=temp_dir
-        )
+        dataset = MultiplexDataset(fov_paths, naming_convention)
+        nimbus = Nimbus(dataset=dataset, output_dir=temp_dir)
         nimbus.check_inputs()
 
 
 def test_initialize_model():
+    dataset = MultiplexDataset(["tests"])
     nimbus = Nimbus(
-        fov_paths=[""], segmentation_naming_convention="", output_dir="",
+        dataset, output_dir="",
         input_shape=[512,512], batch_size=4
     )
     nimbus.initialize_model(padding="valid")
@@ -43,19 +43,17 @@ def test_prepare_normalization_dict():
         selected_markers = ["CD45", "CD3", "CD8", "ChyTr"]
         fov_paths,_ = prepare_tif_data(num_samples, temp_dir, selected_markers)
         naming_convention = prep_naming_convention(os.path.join(temp_dir, "deepcell_output"))
-        nimbus = Nimbus(
-            fov_paths, naming_convention, temp_dir,
-            include_channels=["CD45", "CD3", "CD8"]
+        dataset = MultiplexDataset(
+            fov_paths, naming_convention, include_channels=["CD45", "CD3", "CD8"]
         )
+        nimbus = Nimbus(dataset, temp_dir)
         # test if normalization dict gets prepared and saved
         nimbus.prepare_normalization_dict(overwrite=True)
         assert os.path.exists(os.path.join(temp_dir, "normalization_dict.json"))
         assert "ChyTr" not in nimbus.normalization_dict.keys()
 
         # test if normalization dict gets loaded
-        nimbus_2 = Nimbus(
-            fov_paths, naming_convention, temp_dir, include_channels=["CD45", "CD3", "CD8"]
-        )
+        nimbus_2 = Nimbus(dataset, temp_dir)
         nimbus_2.prepare_normalization_dict()
         assert nimbus_2.normalization_dict == nimbus.normalization_dict
 
@@ -64,7 +62,8 @@ def test_tile_input():
     image = torch.rand([1,2,768,768])
     tile_size = (512, 512)
     output_shape = (320,320)
-    nimbus = Nimbus(fov_paths=[""], segmentation_naming_convention="", output_dir="")
+    dataset = MultiplexDataset(["tests"])
+    nimbus = Nimbus(MultiplexDataset, output_dir="")
     nimbus.model = lambda x: x[..., 96:-96, 96:-96]
     tiled_input, padding = nimbus._tile_input(image, tile_size, output_shape)
     assert tiled_input.shape == (3,3,1,2,512,512)
@@ -76,8 +75,7 @@ def test_tile_and_stitch():
     image = rescale(astronaut(), 1.5, channel_axis=-1)
     image = np.moveaxis(image, -1, 0)[np.newaxis, ...]
     nimbus = Nimbus(
-        fov_paths=[""], segmentation_naming_convention="", output_dir="",
-        input_shape=[512,512], batch_size=4
+        dataset="", output_dir="", input_shape=[512,512], batch_size=4
     )
     # check if tile and stitch works for mock model unequal input and output shape
     # mock model only center crops the input, so that the stitched output is equal to the input
