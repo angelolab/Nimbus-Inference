@@ -446,8 +446,11 @@ def calculate_normalization(dataset: MultiplexDataset, quantile: float):
     for channel in dataset.channels:
         mplex_img = dataset.get_channel(dataset.fovs[0], channel)
         mplex_img = mplex_img.astype(np.float32)
-        foreground = mplex_img[mplex_img > 0]
-        normalization_values[channel] = np.quantile(foreground, quantile)
+        if np.any(mplex_img):
+            foreground = mplex_img[mplex_img > 0]
+            normalization_values[channel] = np.quantile(foreground, quantile)
+        else:
+            normalization_values[channel] = None
     return normalization_values
 
 
@@ -494,7 +497,8 @@ def prepare_normalization_dict(
         for channel, normalization_value in norm_dict.items():
             if channel not in normalization_dict:
                 normalization_dict[channel] = []
-            normalization_dict[channel].append(normalization_value)
+            if normalization_value:
+                normalization_dict[channel].append(normalization_value)
     if n_jobs > 1:
         get_reusable_executor().shutdown(wait=True)
     for channel in normalization_dict.keys():
