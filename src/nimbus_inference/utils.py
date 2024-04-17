@@ -75,7 +75,11 @@ class LazyOMETIFFReader(OMETIFFReader):
         """
         with tifffile.imread(str(self.fpath), aszarr=True) as store:
             z = zarr.open(store, mode='r')
-            shape = z.shape
+            if hasattr(z, "shape"):
+                zz = z
+            else:
+                zz = z[0]
+            shape = zz.shape
         return shape
 
     def get_channel(self, channel_name: str):
@@ -90,10 +94,17 @@ class LazyOMETIFFReader(OMETIFFReader):
             z = zarr.open(store, mode='r')
             # correct DimOrder, often DimOrder is TZCYX, but image is stored as CYX,
             # thus we remove the trailing dimensions
+            if hasattr(z, "shape"):
+                zz = z
+            else:
+                zz = z[0]
             dim_order = self.metadata["DimOrder"]
-            dim_order = dim_order[-len(z.shape):]
+            if len(dim_order) > len(zz.shape):
+                dim_order = dim_order.replace("T", "")
+            if len(dim_order) > len(zz.shape):
+                dim_order = dim_order.replace("Z", "")
             channel_idx = dim_order.find("C")
-            slice_string = "z[" + ":," * channel_idx + str(idx) + "]"
+            slice_string = "zz[" + ":," * channel_idx + str(idx) + "]"
             channel = eval(slice_string)
         return channel
 
@@ -232,7 +243,10 @@ class MultiplexDataset():
         idx = self.fovs.index(fov)
         fov_path = self.fov_paths[idx]
         instance_path = self.segmentation_naming_convention(fov_path)
-        instance_mask = np.squeeze(io.imread(instance_path))
+        if isinstance(instance_path, str):
+            instance_mask = np.squeeze(io.imread(instance_path))
+        else:
+            instance_mask = instance_path
         return instance_mask
 
 
@@ -345,7 +359,7 @@ def predict_fovs(
     for fov_path, fov in zip(dataset.fov_paths, dataset.fovs):
         print(f"Predicting {fov_path}...")
         out_fov_path = os.path.join(
-            os.path.normpath(output_dir), os.path.basename(fov_path)
+            os.path.normpath(output_dir), os.path.basename(fov_path).replace(suffix, "")
         )
         df_fov = pd.DataFrame()
         instance_mask = dataset.get_segmentation(fov)
@@ -356,9 +370,9 @@ def predict_fovs(
                 scale = 0.5
                 input_data = np.squeeze(input_data)
                 _, h,w = input_data.shape
-                img = cv2.resize(input_data[0], [int(h*scale), int(w*scale)])
+                img = cv2.resize(input_data[0], [int(w*scale), int(h*scale)])
                 binary_mask = cv2.resize(
-                    input_data[1], [int(h*scale), int(w*scale)], interpolation=0
+                    input_data[1], [int(w*scale), int(h*scale)], interpolation=0
                 )
                 input_data = np.stack([img, binary_mask], axis=0)[np.newaxis,...]
             if test_time_augmentation:
@@ -375,7 +389,7 @@ def predict_fovs(
                 )
             prediction = np.squeeze(prediction)
             if half_resolution:
-                prediction = cv2.resize(prediction, (h, w))
+                prediction = cv2.resize(prediction, (w, h))
             df = pd.DataFrame(segment_mean(instance_mask, prediction))
             if df_fov.empty:
                 df_fov["label"] = df["label"]
@@ -458,7 +472,7 @@ def prepare_normalization_dict(
         random.shuffle(fov_paths)
         fov_paths = fov_paths[:n_subset]
     print("Iterate over fovs...")
-    if n_jobs > 1:
+    if n_jobs > 1 and len(fov_paths) > 1:
         normalization_values = Parallel(n_jobs=n_jobs)(
             delayed(calculate_normalization)(
                 MultiplexDataset(
