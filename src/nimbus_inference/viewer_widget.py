@@ -204,10 +204,9 @@ class NimbusViewer(object):
         """
         # Convert composite image to bytes and assign it to the output_image widget
         if composite_image.shape[0] > self.max_resolution[0] or composite_image.shape[1] > self.max_resolution[1]:
-            scale = np.max(self.max_resolution)/np.max(composite_image.shape)
-            print(f"Rescaling of shape {composite_image.shape} by {scale}")
-            composite_image = rescale(composite_image, scale)
-            print(f"Rescaled image to {composite_image.shape}")
+            scale = float(np.max(self.max_resolution)/np.max(composite_image.shape))
+            composite_image = rescale(composite_image, (scale, scale, 1), preserve_range=True)
+            composite_image = composite_image.astype(np.uint8)
         with BytesIO() as output_buffer:
             io.imsave(output_buffer, composite_image, format="png")
             output_buffer.seek(0)
