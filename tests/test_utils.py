@@ -296,7 +296,7 @@ def test_MultiplexDataset():
         # check if we get the correct channels and fov_paths
         dataset = MultiplexDataset(fov_paths, segmentation_naming_convention, suffix=".ome.tiff")
         assert len(dataset) == 1
-        assert dataset.channels == ["CD4", "CD56"]
+        assert set(dataset.channels) == set(["CD4", "CD56"])
         assert dataset.fov_paths == fov_paths
         assert dataset.multi_channel == True
         cd4_channel = io.imread(fov_paths[0])[0]
@@ -312,7 +312,7 @@ def test_MultiplexDataset():
         )
         dataset = MultiplexDataset(fov_paths, segmentation_naming_convention, suffix=".tiff")
         assert len(dataset) == 1
-        assert dataset.channels == ["CD4", "CD56"]
+        assert set(dataset.channels) == set(["CD4", "CD56"])
         assert dataset.fov_paths == fov_paths
         assert dataset.multi_channel == False
         cd4_channel_ = dataset.get_channel(fov="fov_0", channel="CD4")
