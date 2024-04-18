@@ -140,6 +140,7 @@ class Nimbus(nn.Module):
         )
         if not os.path.exists(self.checkpoint_path):
             local_dir = os.path.join(path, "assets")
+            os.makedirs(local_dir, exist_ok=True)
             print("Downloading weights from Hugging Face Hub...")
             self.checkpoint_path = hf_hub_download(
                 repo_id="JLrumberger/Nimbus-Inference",
@@ -281,7 +282,7 @@ class Nimbus(nn.Module):
         pad_h0, pad_w0 = np.array(tile_size) - (
             np.array(image.shape[-2:]) % np.array(output_shape)
         )
-        pad_h1, pad_w1 = pad_h0 // 2, pad_h0 - pad_h0 // 2
+        pad_h1, pad_w1 = pad_h0 // 2, pad_w0 // 2
         pad_h0, pad_w0 = pad_h0 - pad_h1, pad_w0 - pad_w1
         image = np.pad(image, ((0, 0), (0, 0), (pad_h0, pad_h1), (pad_w0, pad_w1)), mode=pad_mode)
         b, c = image.shape[:2]

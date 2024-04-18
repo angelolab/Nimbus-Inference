@@ -7,11 +7,13 @@ from copy import copy
 import numpy as np
 from natsort import natsorted
 from skimage.segmentation import find_boundaries
+from skimage.transform import rescale
 from nimbus_inference.utils import MultiplexDataset
 
 class NimbusViewer(object):
     def __init__(
-            self, dataset: MultiplexDataset, output_dir: str, img_width='600px', suffix=".tiff"
+            self, dataset: MultiplexDataset, output_dir: str, img_width='600px', suffix=".tiff",
+            max_resolution=(2048, 2048)
         ):
         """Viewer for Nimbus application.
         Args:
@@ -20,11 +22,13 @@ class NimbusViewer(object):
             segmentation_naming_convention (fn): Function that maps input path to segmentation path
             img_width (str): Width of images in viewer.
             suffix (str): Suffix of images in dataset.
+            max_resolution (tuple): Maximum resolution of images in viewer.
         """
         self.image_width = img_width
         self.dataset = dataset
         self.output_dir = output_dir
         self.suffix = suffix
+        self.max_resolution = max_resolution
         self.fov_names = natsorted(copy(self.dataset.fovs))
         self.update_button = widgets.Button(description="Update Image")
         self.update_button.on_click(self.update_button_click)
@@ -199,6 +203,10 @@ class NimbusViewer(object):
             composite_image (np.array): Composite image to display.
         """
         # Convert composite image to bytes and assign it to the output_image widget
+        if composite_image.shape[0] > self.max_resolution[0] or composite_image.shape[1] > self.max_resolution[1]:
+            scale = float(np.max(self.max_resolution)/np.max(composite_image.shape))
+            composite_image = rescale(composite_image, (scale, scale, 1), preserve_range=True)
+            composite_image = composite_image.astype(np.uint8)
         with BytesIO() as output_buffer:
             io.imsave(output_buffer, composite_image, format="png")
             output_buffer.seek(0)
