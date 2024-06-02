@@ -44,14 +44,21 @@ See the [changelog][changelog].
 
 ## Contact
 
-For questions and help requests, you can reach out in the [scverse discourse][scverse-discourse].
 If you found a bug, please use the [issue tracker][issue-tracker].
+For questions and help requests, you can also reach out in the [issue tracker][issue-tracker].
 
 ## Citation
 
-> t.b.a
-
-[scverse-discourse]: https://discourse.scverse.org/
+```bash
+@article{rum2024nimbus,
+  title={Automated classification of cellular expression in multiplexed imaging data with Nimbus},
+  author={Rumberger, J. Lorenz and Greenwald, Noah F. and Ranek, Jolene S. and Boonrat, Potchara and Walker, Cameron and Franzen, Jannik and Varra, Sricharan Reddy and Kong, Alex and Sowers, Cameron and Liu, Candace C. and Averbukh, Inna and Piyadasa, Hadeesha and Vanguri, Rami and Nederlof, Iris and Wang, Xuefei Julie and Van Valen, David and Kok, Marleen and Hollman, Travis J. and Kainmueller, Dagmar and Angelo, Michael},
+  journal={bioRxiv},
+  pages={2024--05},
+  year={2024},
+  publisher={Cold Spring Harbor Laboratory}
+}
+```
 [issue-tracker]: https://github.com/angelolab/Nimbus-Inference/issues
 [changelog]: https://Nimbus-Inference.readthedocs.io/latest/changelog.html
 [link-docs]: https://Nimbus-Inference.readthedocs.io
