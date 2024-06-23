@@ -278,7 +278,7 @@ def segment_mean(instance_mask, prediction):
     """
     props_df = regionprops_table(
         label_image=instance_mask, intensity_image=prediction,
-        properties=['label' ,'intensity_mean']
+        properties=['label' , 'centroid', 'intensity_mean']
     )
     return props_df
 
@@ -387,7 +387,7 @@ def predict_fovs(
                 )
             prediction = np.squeeze(prediction)
             if half_resolution:
-                prediction = cv2.resize(prediction, (w, h))
+                prediction = cv2.resize(prediction, (w, h), interpolation=cv2.INTER_NEAREST)
             df = pd.DataFrame(segment_mean(instance_mask, prediction))
             if df_fov.empty:
                 df_fov["label"] = df["label"]
