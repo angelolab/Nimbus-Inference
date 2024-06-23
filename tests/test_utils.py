@@ -22,7 +22,9 @@ class MockModel(torch.nn.Module):
         return self.fn(x)
 
 
-def prepare_tif_data(num_samples, temp_dir, selected_markers, random=False, std=1):
+def prepare_tif_data(
+        num_samples, temp_dir, selected_markers, random=False, std=1, shape=(256, 256),
+    ):
     np.random.seed(42)
     fov_paths = []
     inst_paths = []
@@ -35,9 +37,9 @@ def prepare_tif_data(num_samples, temp_dir, selected_markers, random=False, std=
         os.makedirs(folder, exist_ok=True)
         for marker, scale in zip(selected_markers, std):
             if random:
-                img = np.random.rand(256, 256) * scale
+                img = np.random.rand(*shape) * scale
             else:
-                img = np.ones([256, 256])
+                img = np.ones(shape)
             io.imsave(
                 os.path.join(folder, marker + ".tiff"),
                 img,
@@ -46,7 +48,7 @@ def prepare_tif_data(num_samples, temp_dir, selected_markers, random=False, std=
         io.imsave(
                 inst_path, np.array(
                     [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]
-                ).repeat(64, axis=1).repeat(64, axis=0)
+                ).repeat(shape[1]//4, axis=1).repeat(shape[0]//4, axis=0)
         )
         if folder not in fov_paths:
             fov_paths.append(folder)
@@ -63,11 +65,13 @@ def prepare_tif_data(num_samples, temp_dir, selected_markers, random=False, std=
     return fov_paths, inst_paths
 
 
-def prepare_ome_tif_data(num_samples, temp_dir, selected_markers, random=False, std=1):
+def prepare_ome_tif_data(
+        num_samples, temp_dir, selected_markers, random=False, std=1, shape=(256, 256), 
+    ):
     np.random.seed(42)
     metadata_dict = {
-        "SizeX" : 256,
-        "SizeY" : 256,
+        "SizeX" : shape[0],
+        "SizeY" : shape[1],
         "SizeC" : len(selected_markers) + 3,
         "PhysicalSizeX" : 0.5,
         "PhysicalSizeXUnit" : "µm",
@@ -83,9 +87,9 @@ def prepare_ome_tif_data(num_samples, temp_dir, selected_markers, random=False, 
         channels = []
         for j, (marker, s) in enumerate(zip(selected_markers, std)):
             if random:
-                img = np.random.rand(256, 256) * s
+                img = np.random.rand(*shape) * s
             else:
-                img = np.ones([256, 256])
+                img = np.ones(shape)
             channels.append(img)
             metadata_dict["Channels"][marker] = {
                 "Name" : marker,
@@ -108,7 +112,7 @@ def prepare_ome_tif_data(num_samples, temp_dir, selected_markers, random=False, 
         io.imsave(
                 inst_path, np.array(
                     [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]
-                ).repeat(64, axis=1).repeat(64, axis=0)
+                ).repeat(shape[1]//4, axis=1).repeat(shape[0]//4, axis=0)
         )
         fov_paths.append(sample_name)
         inst_paths.append(inst_path)
@@ -206,7 +210,7 @@ def test_tt_aug():
             return os.path.join(temp_dir_, "deepcell_output", fov_ + "_whole_cell.tiff")
         channel = "CD4"
         fov_paths, inst_paths = prepare_tif_data(
-            num_samples=1, temp_dir=temp_dir, selected_markers=[channel]
+            num_samples=1, temp_dir=temp_dir, selected_markers=[channel], shape=(512, 256)
         )
         output_dir = os.path.join(temp_dir, "nimbus_output")
         dataset = MultiplexDataset(fov_paths, segmentation_naming_convention, suffix=".tiff")
@@ -221,7 +225,7 @@ def test_tt_aug():
             batch_size=32
         )
         # check if we get the correct shape
-        assert pred_map.shape == (2, 256, 256)
+        assert pred_map.shape == (2, 512, 256)
 
         pred_map_2 = tt_aug(
             input_data, channel, nimbus, nimbus.normalization_dict, rotate=False, flip=True,
@@ -251,7 +255,7 @@ def test_predict_fovs():
             return os.path.join(temp_dir_, "deepcell_output", fov_ + "_whole_cell.tiff")
 
         fov_paths, _ = prepare_tif_data(
-            num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"]
+            num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"], shape=(512, 256)
         )
         dataset = MultiplexDataset(fov_paths, segmentation_naming_convention, suffix=".tiff")
         output_dir = os.path.join(temp_dir, "nimbus_output")
@@ -261,7 +265,7 @@ def test_predict_fovs():
         cell_table = predict_fovs(
             nimbus=nimbus, dataset=dataset, output_dir=output_dir,
             normalization_dict=nimbus.normalization_dict, suffix=".tiff",
-            save_predictions=False, half_resolution=True,
+            save_predictions=False, half_resolution=True, test_time_augmentation=False
         )
         # check if we get the correct number of cells
         assert len(cell_table) == 15
@@ -277,7 +281,7 @@ def test_predict_fovs():
         cell_table = predict_fovs(
             nimbus=nimbus, dataset=dataset, output_dir=output_dir,
             normalization_dict=nimbus.normalization_dict, suffix=".tiff",
-            save_predictions=True, half_resolution=True,
+            save_predictions=True, half_resolution=True, test_time_augmentation=False
         )
         assert os.path.exists(os.path.join(output_dir, "fov_0", "CD4.tiff"))
         assert os.path.exists(os.path.join(output_dir, "fov_0", "CD56.tiff"))
@@ -305,7 +309,8 @@ def test_MultiplexDataset():
             return os.path.join(temp_dir_, "deepcell_output", fov_ + "_whole_cell.tiff")
 
         fov_paths, _ = prepare_ome_tif_data(
-        num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"]
+        num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"],
+        shape=(512, 256)
         )
         # check if check inputs raises error when inputs are incorrect
         with pytest.raises(FileNotFoundError):
@@ -323,10 +328,13 @@ def test_MultiplexDataset():
         fov_0_seg_ = dataset.get_segmentation(fov="fov_0")
         assert np.alltrue(fov_0_seg == fov_0_seg_)
 
-        # test everything again with single channel data        
+        # test everything again with single channel    
         fov_paths, _ = prepare_tif_data(
-            num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"]
+            num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"],
+            shape=(512, 256)
         )
+        cd4_channel = io.imread(os.path.join(fov_paths[0], "CD4.tiff"))
+        fov_0_seg = io.imread(segmentation_naming_convention(fov_paths[0]))
         dataset = MultiplexDataset(fov_paths, segmentation_naming_convention, suffix=".tiff")
         assert len(dataset) == 1
         assert set(dataset.channels) == set(["CD4", "CD56"])

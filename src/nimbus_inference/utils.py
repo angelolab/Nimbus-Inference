@@ -315,25 +315,21 @@ def test_time_aug(
             lambda x: torch.flip(x, [2]),
             lambda x: torch.flip(x, [3])
         ]
-    input_batch = []
-    for forw_aug in forward_augmentations:
-        input_data_tmp = forw_aug(input_data).numpy() # bhwc
-        input_batch.append(np.concatenate(input_data_tmp))
-    input_batch = np.stack(input_batch, 0)
-    seg_map = app.predict_segmentation(
-        input_batch,
-        preprocess_kwargs={
-            "normalize": True,
-            "marker": channel,
-            "normalization_dict": normalization_dict},
-        )
-    seg_map = torch.from_numpy(seg_map)
-    tmp = []
-    for backw_aug, seg_map_tmp in zip(backward_augmentations, seg_map):
-        seg_map_tmp = backw_aug(seg_map_tmp[np.newaxis,...])
-        seg_map_tmp = np.squeeze(seg_map_tmp)
-        tmp.append(seg_map_tmp)
-    seg_map = np.stack(tmp, 0)
+    output = []
+    for forw_aug, backw_aug in zip(forward_augmentations, backward_augmentations):
+        input_data_aug = forw_aug(input_data).numpy() # bhwc
+        seg_map = app.predict_segmentation(
+            input_data_aug,
+            preprocess_kwargs={
+                "normalize": True,
+                "marker": channel,
+                "normalization_dict": normalization_dict},
+            )
+        seg_map = torch.from_numpy(seg_map)
+        seg_map = backw_aug(seg_map[np.newaxis,...])
+        seg_map = np.squeeze(seg_map)
+        output.append(seg_map)
+    seg_map = np.stack(output, 0)
     seg_map = np.mean(seg_map, axis = 0)
     return seg_map
 
