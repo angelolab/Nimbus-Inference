@@ -126,6 +126,8 @@ class MultiplexDataset():
         self.fov_paths = fov_paths
         self.segmentation_naming_convention = segmentation_naming_convention
         self.suffix = suffix
+        if self.suffix[0] != ".": 
+            self.suffix = "." + self.suffix
         self.silent = silent
         self.include_channels = include_channels
         self.multi_channel = self.is_multi_channel_tiff(fov_paths[0])

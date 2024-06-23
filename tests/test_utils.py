@@ -51,6 +51,15 @@ def prepare_tif_data(num_samples, temp_dir, selected_markers, random=False, std=
         if folder not in fov_paths:
             fov_paths.append(folder)
             inst_paths.append(inst_path)
+    # add ds_store file to test if it gets ignored
+    ds_store_paths = [
+        os.path.join(temp_dir, ".DS_Store"),
+        os.path.join(temp_dir, "fov_0", ".DS_Store"),
+        os.path.join(temp_dir, "deepcell_output", ".DS_Store"),
+    ]
+    for ds_store in ds_store_paths:
+        with open(ds_store, "w") as f:
+            f.write("test")
     return fov_paths, inst_paths
 
 
@@ -103,6 +112,14 @@ def prepare_ome_tif_data(num_samples, temp_dir, selected_markers, random=False, 
         )
         fov_paths.append(sample_name)
         inst_paths.append(inst_path)
+    # add ds_store file to test if it gets ignored
+    ds_store_paths = [
+        os.path.join(temp_dir, ".DS_Store"),
+        os.path.join(temp_dir, "deepcell_output", ".DS_Store"),
+    ]
+    for ds_store in ds_store_paths:
+        with open(ds_store, "w") as f:
+            f.write("test")
     return fov_paths, inst_paths
 
 
