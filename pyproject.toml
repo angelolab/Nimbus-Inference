@@ -41,6 +41,10 @@ dependencies = [
     "zarr",
 ]
 
+[[project.source]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu118"
+priority = "supplemental"
 
 [project.optional-dependencies]
 dev = ["pre-commit", "twine>=4.0.2"]
