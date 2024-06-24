@@ -500,7 +500,13 @@ def prepare_normalization_dict(
     if n_jobs > 1:
         get_reusable_executor().shutdown(wait=True)
     for channel in normalization_dict.keys():
-        normalization_dict[channel] = np.mean(normalization_dict[channel])
+        # exclude None and NaN values before averaging
+        norm_values = np.array(normalization_dict[channel])
+        norm_values = norm_values[~np.isnan(norm_values)]
+        norm_values = np.mean(norm_values)
+        if np.isnan(norm_values):
+            norm_values = 1e-8
+        normalization_dict[channel] = norm_values
     # save normalization dict
     with open(os.path.join(output_dir, output_name), 'w') as f:
         json.dump(normalization_dict, f)
