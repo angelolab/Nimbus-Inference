@@ -325,7 +325,8 @@ def test_time_aug(
                 "marker": channel,
                 "normalization_dict": normalization_dict},
             )
-        seg_map = torch.from_numpy(seg_map)
+        if not isinstance(seg_map, torch.Tensor):
+            seg_map = torch.from_numpy(seg_map)
         seg_map = backw_aug(seg_map)
         seg_map = np.squeeze(seg_map)
         output.append(seg_map)
@@ -385,6 +386,8 @@ def predict_fovs(
                         "normalization_dict": normalization_dict
                     },
                 )
+            if not isinstance(prediction, np.ndarray):
+                prediction = prediction.cpu().numpy()
             prediction = np.squeeze(prediction)
             if half_resolution:
                 prediction = cv2.resize(prediction, (w, h), interpolation=cv2.INTER_NEAREST)
