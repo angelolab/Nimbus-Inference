@@ -326,7 +326,7 @@ def test_time_aug(
                 "normalization_dict": normalization_dict},
             )
         seg_map = torch.from_numpy(seg_map)
-        seg_map = backw_aug(seg_map[np.newaxis,...])
+        seg_map = backw_aug(seg_map)
         seg_map = np.squeeze(seg_map)
         output.append(seg_map)
     seg_map = np.stack(output, 0)
