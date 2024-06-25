@@ -1,5 +1,5 @@
 <p align="center">
-<img src="https://github.com/angelolab/Nimbus-Inference/blob/fix_issues/assets/nimbus_logo.png">
+<img src="https://github.com/angelolab/Nimbus-Inference/blob/main/assets/nimbus_logo.png">
 </p>
 
 [![Tests][badge-tests]][link-tests]
