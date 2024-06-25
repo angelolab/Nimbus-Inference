@@ -1,4 +1,6 @@
-# Nimbus-Inference
+<p align="center">
+<img src="https://github.com/angelolab/Nimbus-Inference/blob/fix_issues/assets/nimbus_logo.png">
+</p>
 
 [![Tests][badge-tests]][link-tests]
 [![Documentation][badge-docs]][link-docs]
@@ -24,7 +26,7 @@ Make a conda environment for Nimbus and activate it
 
 Install CUDA libraries if you have a NVIDIA GPU available 
 
-`conda install -c conda-forge cudatoolkit=11.2 cudnn=8.1.0`
+`conda install -c conda-forge cudatoolkit=11.8 cudnn=8.2.0`
 
 Install the package and all depedencies in the conda environment
 

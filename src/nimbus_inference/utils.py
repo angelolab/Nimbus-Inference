@@ -126,6 +126,8 @@ class MultiplexDataset():
         self.fov_paths = fov_paths
         self.segmentation_naming_convention = segmentation_naming_convention
         self.suffix = suffix
+        if self.suffix[0] != ".": 
+            self.suffix = "." + self.suffix
         self.silent = silent
         self.include_channels = include_channels
         self.multi_channel = self.is_multi_channel_tiff(fov_paths[0])
@@ -276,7 +278,7 @@ def segment_mean(instance_mask, prediction):
     """
     props_df = regionprops_table(
         label_image=instance_mask, intensity_image=prediction,
-        properties=['label' ,'intensity_mean']
+        properties=['label' , 'centroid', 'intensity_mean']
     )
     return props_df
 
@@ -313,25 +315,22 @@ def test_time_aug(
             lambda x: torch.flip(x, [2]),
             lambda x: torch.flip(x, [3])
         ]
-    input_batch = []
-    for forw_aug in forward_augmentations:
-        input_data_tmp = forw_aug(input_data).numpy() # bhwc
-        input_batch.append(np.concatenate(input_data_tmp))
-    input_batch = np.stack(input_batch, 0)
-    seg_map = app.predict_segmentation(
-        input_batch,
-        preprocess_kwargs={
-            "normalize": True,
-            "marker": channel,
-            "normalization_dict": normalization_dict},
-        )
-    seg_map = torch.from_numpy(seg_map)
-    tmp = []
-    for backw_aug, seg_map_tmp in zip(backward_augmentations, seg_map):
-        seg_map_tmp = backw_aug(seg_map_tmp[np.newaxis,...])
-        seg_map_tmp = np.squeeze(seg_map_tmp)
-        tmp.append(seg_map_tmp)
-    seg_map = np.stack(tmp, 0)
+    output = []
+    for forw_aug, backw_aug in zip(forward_augmentations, backward_augmentations):
+        input_data_aug = forw_aug(input_data).numpy() # bhwc
+        seg_map = app.predict_segmentation(
+            input_data_aug,
+            preprocess_kwargs={
+                "normalize": True,
+                "marker": channel,
+                "normalization_dict": normalization_dict},
+            )
+        if not isinstance(seg_map, torch.Tensor):
+            seg_map = torch.from_numpy(seg_map)
+        seg_map = backw_aug(seg_map)
+        seg_map = np.squeeze(seg_map)
+        output.append(seg_map)
+    seg_map = np.stack(output, 0)
     seg_map = np.mean(seg_map, axis = 0)
     return seg_map
 
@@ -387,9 +386,11 @@ def predict_fovs(
                         "normalization_dict": normalization_dict
                     },
                 )
+            if not isinstance(prediction, np.ndarray):
+                prediction = prediction.cpu().numpy()
             prediction = np.squeeze(prediction)
             if half_resolution:
-                prediction = cv2.resize(prediction, (w, h))
+                prediction = cv2.resize(prediction, (w, h), interpolation=cv2.INTER_NEAREST)
             df = pd.DataFrame(segment_mean(instance_mask, prediction))
             if df_fov.empty:
                 df_fov["label"] = df["label"]
@@ -502,7 +503,13 @@ def prepare_normalization_dict(
     if n_jobs > 1:
         get_reusable_executor().shutdown(wait=True)
     for channel in normalization_dict.keys():
-        normalization_dict[channel] = np.mean(normalization_dict[channel])
+        # exclude None and NaN values before averaging
+        norm_values = np.array(normalization_dict[channel])
+        norm_values = norm_values[~np.isnan(norm_values)]
+        norm_values = np.mean(norm_values)
+        if np.isnan(norm_values):
+            norm_values = 1e-8
+        normalization_dict[channel] = norm_values
     # save normalization dict
     with open(os.path.join(output_dir, output_name), 'w') as f:
         json.dump(normalization_dict, f)

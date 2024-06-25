@@ -215,7 +215,7 @@ class Nimbus(nn.Module):
                     input_data = torch.tensor(input_data).float()
                 input_data = input_data.to(self.device)
                 prediction = self.model(input_data)
-                prediction = prediction.cpu().squeeze(0).numpy()
+                prediction = prediction.cpu()
         else:
             if not hasattr(self, "model") or self.model.padding != "valid":
                 self.initialize_model(padding="valid")
