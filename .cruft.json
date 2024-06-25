@@ -1,7 +1,7 @@
 {
   "template": "https://github.com/scverse/cookiecutter-scverse",
-  "commit": "6a1f5a101d3de6ef0c48821eaaa00d078ad223a1",
-  "checkout": null,
+  "commit": "87a407a65408d75a949c0b54b19fd287475a56f8",
+  "checkout": "v0.4.0",
   "context": {
     "cookiecutter": {
       "project_name": "Nimbus-Inference",
@@ -13,7 +13,8 @@
       "project_repo": "https://github.com/angelolab/Nimbus-Inference",
       "license": "MIT License",
       "_copy_without_render": [
-        ".github/workflows/**.yaml",
+        ".github/workflows/build.yaml",
+        ".github/workflows/test.yaml",
         "docs/_templates/autosummary/**.rst"
       ],
       "_render_devdocs": false,
