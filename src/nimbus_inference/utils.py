@@ -249,6 +249,7 @@ class MultiplexDataset():
             instance_mask = np.squeeze(io.imread(instance_path))
         else:
             instance_mask = instance_path
+        instance_mask = instance_mask.astype(np.uint64)
         return instance_mask
 
 
@@ -336,9 +337,9 @@ def test_time_aug(
 
 
 def predict_fovs(
-        nimbus, dataset: MultiplexDataset, normalization_dict: dict, output_dir: str,
-        suffix: str="tiff", save_predictions: bool=True, half_resolution: bool=False,
-        batch_size: int=4, test_time_augmentation: bool=True
+        nimbus, dataset: MultiplexDataset, normalization_dict: dict,
+        output_dir: str, suffix: str="tiff", save_predictions: bool=True,
+        half_resolution: bool=False, batch_size: int=4, test_time_augmentation: bool=True
     ):
     """Predicts the segmentation map for each mplex image in each fov
     Args:

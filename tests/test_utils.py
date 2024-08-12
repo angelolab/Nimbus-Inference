@@ -24,6 +24,7 @@ class MockModel(torch.nn.Module):
 
 def prepare_tif_data(
         num_samples, temp_dir, selected_markers, random=False, std=1, shape=(256, 256),
+        image_dtype=np.float32, instance_dtype=np.uint16
     ):
     np.random.seed(42)
     fov_paths = []
@@ -42,13 +43,13 @@ def prepare_tif_data(
                 img = np.ones(shape)
             io.imsave(
                 os.path.join(folder, marker + ".tiff"),
-                img,
+                img.astype(image_dtype),
             )
         inst_path = os.path.join(deepcell_dir, f"fov_{i}_whole_cell.tiff")
         io.imsave(
                 inst_path, np.array(
                     [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]
-                ).repeat(shape[1]//4, axis=1).repeat(shape[0]//4, axis=0)
+                ).repeat(shape[1]//4, axis=1).repeat(shape[0]//4, axis=0).astype(instance_dtype)
         )
         if folder not in fov_paths:
             fov_paths.append(folder)
@@ -255,7 +256,8 @@ def test_predict_fovs():
             return os.path.join(temp_dir_, "deepcell_output", fov_ + "_whole_cell.tiff")
 
         fov_paths, _ = prepare_tif_data(
-            num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"], shape=(512, 256)
+            num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"], shape=(512, 256),
+            instance_dtype=np.float32
         )
         dataset = MultiplexDataset(fov_paths, segmentation_naming_convention, suffix=".tiff")
         output_dir = os.path.join(temp_dir, "nimbus_output")
