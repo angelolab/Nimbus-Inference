@@ -4,7 +4,8 @@ import nimbus_inference
 from nimbus_inference.utils import (prepare_normalization_dict,
     predict_fovs, nimbus_preprocess, MultiplexDataset
 )
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, list_repo_files
+import re
 from nimbus_inference.unet import UNet
 from tqdm.autonotebook import tqdm
 from pathlib import Path
@@ -46,7 +47,9 @@ def nimbus_preprocess(image, **kwargs):
             norm_factor = np.quantile(output[:,0,...], 0.999)
         # normalize only marker channel in chan 0 not binary mask in chan 1
         output[:,0,...] /= norm_factor
-        # output = output.clip(0, 1)
+    clip_values = kwargs.get("clip_values", False)
+    if clip_values:
+        output[:,0,...] = np.clip(output[:,0,...], clip_values[0], clip_values[1])
     return output
 
 
@@ -125,45 +128,68 @@ class Nimbus(nn.Module):
         print("All inputs are valid.")
 
     def initialize_model(self, padding="reflect"):
-        """Initializes the model and load weights.
+        """Initializes the model and loads the latest weights from Hugging Face Hub if newer.
         Args:
             padding (str): Padding mode for model, either "reflect" or "valid".
-        """
-        model = UNet(num_classes=1, padding=padding)
-        # relative path to weights
+        """        
+        # Set up paths
         path = os.path.dirname(nimbus_inference.__file__)
         path = Path(path).resolve()
-        self.checkpoint_path = os.path.join(
-            path,
-            "assets",
-            "resUnet_baseline_hickey_tonic_dec_mskc_mskp_2_channel_halfres_512_bs32_cw_0.8.pt"
-        )
-        if not os.path.exists(self.checkpoint_path):
-            local_dir = os.path.join(path, "assets")
-            os.makedirs(local_dir, exist_ok=True)
-            print("Downloading weights from Hugging Face Hub...")
+        local_dir = os.path.join(path, "assets")
+        os.makedirs(local_dir, exist_ok=True)
+        # Get list of model files from Hugging Face Hub
+        repo_id = "JLrumberger/Nimbus-Inference"
+        file_list = list_repo_files(repo_id)
+        # Find the latest version on Hugging Face Hub
+        version_pattern = re.compile(r'V(\d+)\.pt')
+        versions = [int(version_pattern.search(file).group(1)) for file in file_list if version_pattern.search(file)]
+        if not versions:
+            raise ValueError("No valid model checkpoints found on Hugging Face Hub.")
+        latest_hub_version = max(versions)
+        latest_hub_checkpoint = f"V{latest_hub_version}.pt"
+        # Check local version
+        local_checkpoints = [f for f in os.listdir(local_dir) if version_pattern.search(f)]
+        if local_checkpoints:
+            local_versions = [int(version_pattern.search(file).group(1)) for file in local_checkpoints]
+            latest_local_version = max(local_versions)
+            latest_local_checkpoint = f"V{latest_local_version}.pt"
+            self.checkpoint_path = os.path.join(local_dir, latest_local_checkpoint)
+        else:
+            latest_local_version = 0
+        # Compare versions and download if necessary
+        if latest_hub_version > latest_local_version:
+            print(f"Newer model checkpoint found: {latest_hub_checkpoint}")
+            print("Downloading from Hugging Face Hub...")
             self.checkpoint_path = hf_hub_download(
-                repo_id="JLrumberger/Nimbus-Inference",
-                filename="resUnet_baseline_hickey_tonic_dec_mskc_mskp_2_channel_halfres_512_bs32_cw_0.8.pt",
+                repo_id=repo_id,
+                filename=latest_hub_checkpoint,
                 local_dir=local_dir,
                 local_dir_use_symlinks=False,
             )
+            print(f"Downloaded weights to {self.checkpoint_path}")
+        else:
+            print(f"Using existing checkpoint: {self.checkpoint_path}")
+        # Load the model
+        model = UNet(num_classes=1, padding=padding)
         model.load_state_dict(torch.load(self.checkpoint_path))
-        print("Loaded weights from {}".format(self.checkpoint_path))
+        print(f"Loaded weights from {self.checkpoint_path}")
         self.model = model.to(self.device).eval()
 
     def prepare_normalization_dict(
-        self, quantile=0.999, n_subset=10, multiprocessing=False, overwrite=False,
+        self, quantile=0.999, clip_values=(0, 2), n_subset=10, multiprocessing=False,
+        overwrite=False,
     ):
         """Load or prepare and save normalization dictionary for Nimbus model.
         Args:
             quantile (float): Quantile to use for normalization.
+            clip_values (list): Values to clip images to after normalization.
             n_subset (int): Number of fovs to use for normalization.
             multiprocessing (bool): Whether to use multiprocessing.
             overwrite (bool): Whether to overwrite existing normalization dict.
         Returns:
             dict: Dictionary of normalization factors.
         """
+        self.clip_values = tuple(clip_values)
         self.normalization_dict_path = os.path.join(self.output_dir, "normalization_dict.json")
         if os.path.exists(self.normalization_dict_path) and not overwrite:
             self.normalization_dict = json.load(open(self.normalization_dict_path))
@@ -206,6 +232,7 @@ class Nimbus(nn.Module):
         Returns:
             np.array: Predicted segmentation.
         """
+        preprocess_kwargs["clip_values"] = self.clip_values
         input_data = nimbus_preprocess(input_data, **preprocess_kwargs)
         if np.all(np.greater_equal(self.input_shape, input_data.shape[-2:])):
             if not hasattr(self, "model") or self.model.padding != "reflect":
