@@ -1,5 +1,6 @@
 from nimbus_inference.utils import (prepare_normalization_dict, calculate_normalization,
-predict_fovs, prepare_input_data, MultiplexDataset, LazyOMETIFFReader)
+predict_fovs, prepare_input_data, MultiplexDataset, LazyOMETIFFReader,
+handle_qupath_segmentation_map)
 from nimbus_inference.utils import test_time_aug as tt_aug
 from nimbus_inference.nimbus import Nimbus
 from skimage import io
@@ -24,7 +25,7 @@ class MockModel(torch.nn.Module):
 
 def prepare_tif_data(
         num_samples, temp_dir, selected_markers, random=False, std=1, shape=(256, 256),
-        image_dtype=np.float32, instance_dtype=np.uint16
+        image_dtype=np.float32, instance_dtype=np.uint16, qupath_seg=False
     ):
     np.random.seed(42)
     fov_paths = []
@@ -46,10 +47,13 @@ def prepare_tif_data(
                 img.astype(image_dtype),
             )
         inst_path = os.path.join(deepcell_dir, f"fov_{i}_whole_cell.tiff")
-        io.imsave(
-                inst_path, np.array(
+        instance_mask = np.array(
                     [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]
                 ).repeat(shape[1]//4, axis=1).repeat(shape[0]//4, axis=0).astype(instance_dtype)
+        if qupath_seg:
+            instance_mask = np.stack([instance_mask] * 3, axis=-1)
+        io.imsave(
+                inst_path, instance_mask
         )
         if folder not in fov_paths:
             fov_paths.append(folder)
@@ -288,6 +292,26 @@ def test_predict_fovs():
         assert os.path.exists(os.path.join(output_dir, "fov_0", "CD4.tiff"))
         assert os.path.exists(os.path.join(output_dir, "fov_0", "CD56.tiff"))
 
+        # check with qupath segmentation map
+        fov_paths, _ = prepare_tif_data(
+            num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"], shape=(512, 256),
+            instance_dtype=np.uint16, qupath_seg=True)
+        dataset = MultiplexDataset(fov_paths, segmentation_naming_convention, suffix=".tiff")
+        output_dir = os.path.join(temp_dir, "nimbus_output_qupath")
+        nimbus = Nimbus(dataset, output_dir)
+        nimbus.prepare_normalization_dict()
+        cell_table = predict_fovs(
+            nimbus=nimbus, dataset=dataset, output_dir=output_dir,
+            normalization_dict=nimbus.normalization_dict, suffix=".tiff",
+            save_predictions=False, half_resolution=True, test_time_augmentation=False
+        )
+        # check if we get the correct number of cells
+        assert len(cell_table) == 15
+        # check if we get the correct columns (fov, label, CD4, CD56)
+        assert np.alltrue(
+            set(cell_table.columns) == set(["fov", "label", "CD4", "CD56"])
+        )
+
 
 def test_LazyOMETIFFReader():
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -301,6 +325,18 @@ def test_LazyOMETIFFReader():
         cd56_channel = reader.get_channel("CD56")
         assert cd4_channel.shape == (256, 256)
         assert cd56_channel.shape == (256, 256)
+
+
+def test_handle_qupath_segmentation_map():
+    # generate a qupath RGB segmentation map
+    instance_mask = np.array(
+        [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]
+    ).repeat(64, axis=1).repeat(64, axis=0).astype(np.float32)
+    instance_mask = instance_mask / (255**2)
+    instance_mask = np.stack([instance_mask] + [np.zeros_like(instance_mask)]*2, axis=-1)
+    instance_mask_handled = handle_qupath_segmentation_map(instance_mask)
+    assert instance_mask_handled.shape == (256, 256)
+    assert np.alltrue(np.unique(instance_mask_handled) == np.array(list(range(0,16))))
 
 
 def test_MultiplexDataset():
