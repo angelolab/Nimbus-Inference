@@ -109,7 +109,7 @@ class LazyOMETIFFReader(OMETIFFReader):
         return channel
 
 
-def handle_qupath_segmentation_map(instance_mask):
+def handle_qupath_segmentation_map(instance_mask: np.array):
     """Handle QuPath segmentation maps stored as 24-bit RGB images
     Args:
         instance_mask (np.array): instance mask
@@ -120,9 +120,9 @@ def handle_qupath_segmentation_map(instance_mask):
     logging.warning("QuPath RGB segmentation map detected. Converting to instance map by")
     logging.warning("combining the RGB channels into a single channel via the following formula:")
     logging.warning("label = RED*256**2 + GREEN * 256 + BLUE")
-    instance_mask = instance_mask[..., 0] * 256**2 + instance_mask[..., 1] * 256 \
+    instance_mask_handled = instance_mask[..., 0] * 256**2 + instance_mask[..., 1] * 256 \
         + instance_mask[..., 2]
-    instance_mask = instance_mask.round(0).astype(np.uint64)
+    instance_mask_handled = instance_mask_handled.round(0).astype(np.uint64)
     return instance_mask
 
 
