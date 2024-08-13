@@ -123,7 +123,7 @@ def handle_qupath_segmentation_map(instance_mask: np.array):
     instance_mask_handled = instance_mask[..., 0] * 256**2 + instance_mask[..., 1] * 256 \
         + instance_mask[..., 2]
     instance_mask_handled = instance_mask_handled.round(0).astype(np.uint64)
-    return instance_mask
+    return instance_mask_handled
 
 
 class MultiplexDataset():
