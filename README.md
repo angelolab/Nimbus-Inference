@@ -2,8 +2,6 @@
 <img src="https://github.com/angelolab/Nimbus-Inference/blob/main/assets/nimbus_logo.png">
 </p>
 
-[![Tests][badge-tests]][link-tests]
-[![Documentation][badge-docs]][link-docs]
 
 [badge-tests]: https://img.shields.io/github/actions/workflow/status/angelolab/Nimbus-Inference/test.yaml?branch=main
 [link-tests]: https://github.com/angelolab/Nimbus-Inference/actions/workflows/test.yml
