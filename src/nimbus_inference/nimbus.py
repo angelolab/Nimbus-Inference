@@ -137,38 +137,55 @@ class Nimbus(nn.Module):
         path = Path(path).resolve()
         local_dir = os.path.join(path, "assets")
         os.makedirs(local_dir, exist_ok=True)
-        # Get list of model files from Hugging Face Hub
-        repo_id = "JLrumberger/Nimbus-Inference"
-        file_list = list_repo_files(repo_id)
-        # Find the latest version on Hugging Face Hub
         version_pattern = re.compile(r'V(\d+)\.pt')
-        versions = [int(version_pattern.search(file).group(1)) for file in file_list if version_pattern.search(file)]
-        if not versions:
-            raise ValueError("No valid model checkpoints found on Hugging Face Hub.")
-        latest_hub_version = max(versions)
-        latest_hub_checkpoint = f"V{latest_hub_version}.pt"
-        # Check local version
         local_checkpoints = [f for f in os.listdir(local_dir) if version_pattern.search(f)]
-        if local_checkpoints:
-            local_versions = [int(version_pattern.search(file).group(1)) for file in local_checkpoints]
-            latest_local_version = max(local_versions)
-            latest_local_checkpoint = f"V{latest_local_version}.pt"
-            self.checkpoint_path = os.path.join(local_dir, latest_local_checkpoint)
-        else:
-            latest_local_version = 0
-        # Compare versions and download if necessary
-        if latest_hub_version > latest_local_version:
-            print(f"Newer model checkpoint found: {latest_hub_checkpoint}")
-            print("Downloading from Hugging Face Hub...")
-            self.checkpoint_path = hf_hub_download(
-                repo_id=repo_id,
-                filename=latest_hub_checkpoint,
-                local_dir=local_dir,
-                local_dir_use_symlinks=False,
-            )
-            print(f"Downloaded weights to {self.checkpoint_path}")
-        else:
-            print(f"Using existing checkpoint: {self.checkpoint_path}")
+
+        try: # download model weights from Hugging Face Hub and revert to local checkpoint if
+            # download fails
+            repo_id = "JLrumberger/Nimbus-Inference"
+            file_list = list_repo_files(repo_id)
+            # Find the latest version on Hugging Face Hub
+            print("Checking for updated model checkpoints on HuggingFace Hub...")
+            versions = [int(version_pattern.search(file).group(1)) for file in file_list if version_pattern.search(file)]
+            if not versions:
+                raise ValueError("No valid model checkpoints found on Hugging Face Hub.")
+            latest_hub_version = max(versions)
+            latest_hub_checkpoint = f"V{latest_hub_version}.pt"
+            # Check local version
+            if local_checkpoints:
+                local_versions = [int(version_pattern.search(file).group(1)) for file in local_checkpoints]
+                latest_local_version = max(local_versions)
+                latest_local_checkpoint = f"V{latest_local_version}.pt"
+                self.checkpoint_path = os.path.join(local_dir, latest_local_checkpoint)
+            else:
+                latest_local_version = 0
+            # Compare versions and download if necessary
+            if latest_hub_version > latest_local_version:
+                print(f"Newer model checkpoint found: {latest_hub_checkpoint}")
+                print("Downloading from Hugging Face Hub...")
+                self.checkpoint_path = hf_hub_download(
+                    repo_id=repo_id,
+                    filename=latest_hub_checkpoint,
+                    local_dir=local_dir,
+                    local_dir_use_symlinks=False,
+                )
+                print(f"Downloaded weights to {self.checkpoint_path}")
+            else:
+                print(f"Using existing checkpoint: {self.checkpoint_path}")
+        except:
+            if local_checkpoints:
+                local_versions = [
+                    int(version_pattern.search(file).group(1)) for file in local_checkpoints
+                ]
+                latest_local_version = max(local_versions)
+                latest_local_checkpoint = f"V{latest_local_version}.pt"
+                self.checkpoint_path = os.path.join(local_dir, latest_local_checkpoint)
+                print(f"Failed to download model weights from Hugging Face Hub")
+                print(f"Using existing checkpoint: {self.checkpoint_path}")
+            else:
+                raise ValueError(
+                    "No connection to HuggingFace Hub and no local model checkpoints found."
+                )
         # Load the model
         model = UNet(num_classes=1, padding=padding)
         model.load_state_dict(torch.load(self.checkpoint_path))

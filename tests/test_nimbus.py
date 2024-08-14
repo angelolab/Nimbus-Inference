@@ -1,4 +1,6 @@
 from tests.test_utils import prepare_ome_tif_data, prepare_tif_data
+from pytest_socket import disable_socket, enable_socket
+import pytest
 import tempfile
 from nimbus_inference.utils import MultiplexDataset
 from nimbus_inference.nimbus import Nimbus, prep_naming_convention
@@ -33,6 +35,11 @@ def test_initialize_model():
     nimbus.initialize_model(padding="reflect")
     assert isinstance(nimbus.model, UNet)
     assert nimbus.model.padding == "reflect"
+    # test if model gets loaded in offline mode when it was loaded from huggingface hub before
+    nimbus.model = None
+    disable_socket()
+    nimbus.initialize_model(padding="valid")
+    assert isinstance(nimbus.model, UNet)
 
 
 def test_prepare_normalization_dict():

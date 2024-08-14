@@ -109,6 +109,23 @@ class LazyOMETIFFReader(OMETIFFReader):
         return channel
 
 
+def handle_qupath_segmentation_map(instance_mask: np.array):
+    """Handle QuPath segmentation maps stored as 24-bit RGB images
+    Args:
+        instance_mask (np.array): instance mask
+    Returns:
+        instance_mask (np.array): instance mask
+    """
+    # add warning
+    logging.warning("QuPath RGB segmentation map detected. Converting to instance map by")
+    logging.warning("combining the RGB channels into a single channel via the following formula:")
+    logging.warning("label = RED*256**2 + GREEN * 256 + BLUE")
+    instance_mask_handled = instance_mask[..., 0] * 256**2 + instance_mask[..., 1] * 256 \
+        + instance_mask[..., 2]
+    instance_mask_handled = instance_mask_handled.round(0).astype(np.uint64)
+    return instance_mask_handled
+
+
 class MultiplexDataset():
     def __init__(
             self, fov_paths: list, segmentation_naming_convention: Callable = None,
@@ -248,8 +265,10 @@ class MultiplexDataset():
         if isinstance(instance_path, str):
             instance_mask = np.squeeze(io.imread(instance_path))
         else:
-            instance_mask = instance_path
-        instance_mask = instance_mask.astype(np.uint64)
+            instance_mask = np.squeeze(instance_path)
+        if len(instance_mask.shape) == 3 and instance_mask.shape[-1] == 3:
+            instance_mask = handle_qupath_segmentation_map(instance_mask)
+        instance_mask = instance_mask.astype(np.uint32)
         return instance_mask
 
 
