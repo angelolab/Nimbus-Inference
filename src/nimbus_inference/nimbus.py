@@ -145,6 +145,7 @@ class Nimbus(nn.Module):
             repo_id = "JLrumberger/Nimbus-Inference"
             file_list = list_repo_files(repo_id)
             # Find the latest version on Hugging Face Hub
+            print("Checking for updated model checkpoints on HuggingFace Hub...")
             versions = [int(version_pattern.search(file).group(1)) for file in file_list if version_pattern.search(file)]
             if not versions:
                 raise ValueError("No valid model checkpoints found on Hugging Face Hub.")

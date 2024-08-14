@@ -62,7 +62,7 @@ doc = [
     "sphinx-copybutton",
     "pandas",
 ]
-test = ["pytest", "coverage", "coveralls[toml]", "pytest-cov"]
+test = ["pytest", "coverage", "coveralls[toml]", "pytest-cov", "pytest-socket"]
 
 [tool.coverage.run]
 source = ["nimbus_inference"]

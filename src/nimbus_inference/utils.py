@@ -268,7 +268,7 @@ class MultiplexDataset():
             instance_mask = np.squeeze(instance_path)
         if len(instance_mask.shape) == 3 and instance_mask.shape[-1] == 3:
             instance_mask = handle_qupath_segmentation_map(instance_mask)
-        instance_mask = instance_mask.astype(np.uint64)
+        instance_mask = instance_mask.astype(np.uint32)
         return instance_mask
 
 
