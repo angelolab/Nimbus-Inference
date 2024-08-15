@@ -121,10 +121,8 @@ def handle_qupath_segmentation_map(instance_mask: np.array):
     logging.warning("combining the RGB channels into a single channel via the following formula:")
     logging.warning("label = RED*256**2 + GREEN * 256 + BLUE")
     # move channel axis to last if not already
-    print(instance_mask.shape)
     if instance_mask.shape.index(3) == 0:
         instance_mask = np.moveaxis(instance_mask, 0, -1)
-    print(instance_mask.shape)
     instance_mask_handled = instance_mask[..., 0] * 256**2 + instance_mask[..., 1] * 256 \
         + instance_mask[..., 2]
     instance_mask_handled = instance_mask_handled.round(0).astype(np.uint64)
