@@ -10,6 +10,7 @@ from datetime import datetime
 from importlib.metadata import metadata
 from pathlib import Path
 import os
+import pkgutil
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE / "extensions"))
@@ -17,6 +18,24 @@ sys.path.insert(0, str(HERE / "extensions"))
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(project_root, 'src'))
 
+
+### debug code
+# Print current working directory and Python path for debugging
+print(f"Current working directory: {os.getcwd()}")
+print(f"Python path: {sys.path}")
+
+# Try to import your module and print its location
+try:
+    import nimbus_inference
+    print(f"nimbus_inference module location: {nimbus_inference.__file__}")
+except ImportError as e:
+    print(f"Failed to import nimbus_inference: {e}")
+
+# List all modules in your package
+print("Modules in nimbus_inference:")
+for loader, module_name, is_pkg in pkgutil.walk_packages(nimbus_inference.__path__):
+    print(module_name)
+###
 # -- Project information -----------------------------------------------------
 
 # NOTE: If you installed your project in editable mode, this might be stale.
