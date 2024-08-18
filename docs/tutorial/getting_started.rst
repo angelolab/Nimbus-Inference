@@ -166,7 +166,7 @@ Nimbus will iterate through your samples and store predictions and a file named 
 
 Select an FOV and one marker image per channel to inspect the imaging data and associated Nimbus predictions
 
-.. code_block:: python
+.. code-block:: python
 
     viewer = NimbusViewer(dataset=dataset, output_dir=nimbus_output_dir)
     viewer.display()
