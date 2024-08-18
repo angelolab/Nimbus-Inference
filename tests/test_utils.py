@@ -1,6 +1,6 @@
 from nimbus_inference.utils import (prepare_normalization_dict, calculate_normalization,
 predict_fovs, prepare_input_data, MultiplexDataset, LazyOMETIFFReader,
-handle_qupath_segmentation_map)
+_handle_qupath_segmentation_map)
 from nimbus_inference.utils import test_time_aug as tt_aug
 from nimbus_inference.nimbus import Nimbus
 from skimage import io
@@ -334,7 +334,7 @@ def test_handle_qupath_segmentation_map():
     ).repeat(64, axis=1).repeat(64, axis=0).astype(np.float32)
     instance_mask = instance_mask / (255**2)
     instance_mask = np.stack([instance_mask] + [np.zeros_like(instance_mask)]*2, axis=-1)
-    instance_mask_handled = handle_qupath_segmentation_map(instance_mask)
+    instance_mask_handled = _handle_qupath_segmentation_map(instance_mask)
     assert instance_mask_handled.shape == (256, 256)
     assert np.alltrue(np.unique(instance_mask_handled) == np.array(list(range(0,16))))
 
