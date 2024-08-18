@@ -21,12 +21,12 @@ jobs:
         pip install -e .[doc]
     - name: Generate API documentation
       run: |
-        sphinx-apidoc -F -o \docs\docu \src
+        sphinx-apidoc -F -o /docs/docu /src
     - name: Build documentation
       run: |
-        sphinx-build -E \docs \docs\build
+        sphinx-build -E /docs /docs/build
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
       with:
         name: html-docs
-        path: docs/build
+        path: /docs/build
