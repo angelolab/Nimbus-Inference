@@ -11,19 +11,20 @@ from skimage.transform import rescale
 from nimbus_inference.utils import MultiplexDataset
 
 class NimbusViewer(object):
+    """Viewer for Nimbus application.
+
+    Args:
+        dataset (MultiplexDataset): dataset object
+        output_dir (str): Path to directory containing output of Nimbus application.
+        segmentation_naming_convention (fn): Function that maps input path to segmentation path
+        img_width (str): Width of images in viewer.
+        suffix (str): Suffix of images in dataset.
+        max_resolution (tuple): Maximum resolution of images in viewer.
+    """
     def __init__(
             self, dataset: MultiplexDataset, output_dir: str, img_width='600px', suffix=".tiff",
             max_resolution=(2048, 2048)
         ):
-        """Viewer for Nimbus application.
-        Args:
-            dataset (MultiplexDataset): dataset object
-            output_dir (str): Path to directory containing output of Nimbus application.
-            segmentation_naming_convention (fn): Function that maps input path to segmentation path
-            img_width (str): Width of images in viewer.
-            suffix (str): Suffix of images in dataset.
-            max_resolution (tuple): Maximum resolution of images in viewer.
-        """
         self.image_width = img_width
         self.dataset = dataset
         self.output_dir = output_dir
@@ -65,6 +66,7 @@ class NimbusViewer(object):
 
     def select_fov(self, change):
         """Selects fov to display.
+
         Args:
             change (dict): Change dictionary from ipywidgets.
         """
@@ -75,11 +77,12 @@ class NimbusViewer(object):
 
     def overlay(self, composite_image, add_boundaries=False, add_overlay=False):
         """Adds overlay to composite image.
+
         Args:
             composite_image (np.array): Composite image to add overlay to.
             boundaries (bool): Whether to add boundaries to overlay.
         Returns:
-            composite_image (np.array): Composite image with overlay.
+            np.array: Composite image with overlay.
         """
         seg_img = self.dataset.get_segmentation(self.fov_select.value)
         seg_boundaries = find_boundaries(seg_img, mode='inner')
@@ -101,10 +104,11 @@ class NimbusViewer(object):
 
     def create_composite_from_dataset(self, path_dict):
         """Creates composite image from input paths.
+
         Args:
             path_dict (dict): Dictionary of paths to images.
         Returns:
-            composite_image (np.array): Composite image.
+            np.array: Composite image.
         """
         for k in ["red", "green", "blue"]:
             if k not in path_dict.keys():
@@ -123,10 +127,11 @@ class NimbusViewer(object):
 
     def create_composite_image(self, path_dict, add_overlay=True, add_boundaries=False):
         """Creates composite image from input paths.
+
         Args:
             path_dict (dict): Dictionary of paths to images.
         Returns:
-            composite_image (np.array): Composite image.
+            np.array: Composite image.
         """
         for k in ["red", "green", "blue"]:
             if k not in path_dict.keys():
@@ -180,10 +185,11 @@ class NimbusViewer(object):
 
     def search_for_similar(self, select_value):
         """Searches for similar filename in input directory.
+
         Args:
             select_value (str): Filename to search for.
         Returns:
-            similar_path (str): Path to similar filename.
+            str: Path to similar filename.
         """
         in_f_path = os.path.join(self.input_dir, self.fov_select.value)
         # search for similar filename in in_f_path
@@ -198,6 +204,7 @@ class NimbusViewer(object):
 
     def update_img(self, image_viewer, composite_image):
         """Updates image in viewer by saving it as png and loading it with the viewer widget.
+
         Args:
             image_viewer (ipywidgets.Image): Image widget to update.
             composite_image (np.array): Composite image to display.

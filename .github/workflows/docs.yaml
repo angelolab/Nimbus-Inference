@@ -19,18 +19,12 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -e .[doc]
-    - name: Debug Python environment
-      run: |
-        python -c "import sys; print(sys.path)"
-        python -c "import nimbus_inference; print(nimbus_inference.__file__)"
     - name: Generate API documentation
       run: |
-        cd docs
-        sphinx-apidoc -f -o . ../src/nimbus_inference
+        sphinx-apidoc -F -o \docs\docu \src
     - name: Build documentation
       run: |
-        cd docs
-        make html
+        sphinx-build -E \docs \docs\build
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
       with:

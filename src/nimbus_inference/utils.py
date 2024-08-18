@@ -24,21 +24,25 @@ import os, sys
 
 
 class HidePrints:
+    """Context manager to hide prints"""
     def __enter__(self):
+        """Hide prints"""
         self._original_stdout = sys.stdout
         sys.stdout = open(os.devnull, 'w')
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """Show prints"""
         sys.stdout.close()
         sys.stdout = self._original_stdout
 
 
 class LazyOMETIFFReader(OMETIFFReader):
+    """Lazy OMETIFFReader class that reads channels only when needed
+
+    Args:
+        fpath (str): path to ome.tif file
+    """
     def __init__(self, fpath: str):
-        """Lazy OMETIFFReader class that reads channels only when needed
-        Args:
-            fpath (str): path to ome.tif file
-        """
         super().__init__(fpath)
         self.metadata = self.get_metadata()
         self.channels = self.get_channel_names()
@@ -46,8 +50,9 @@ class LazyOMETIFFReader(OMETIFFReader):
     
     def get_metadata(self):
         """Get the metadata of the OME-TIFF file
+
         Returns:
-            metadata (dict): metadata of the OME-TIFF file
+            dict: metadata of the OME-TIFF file
         """
         with tifffile.TiffFile(str(self.fpath)) as tif:
             if tif.is_ome:
@@ -60,8 +65,9 @@ class LazyOMETIFFReader(OMETIFFReader):
 
     def get_channel_names(self):
         """Get the channel names of the OME-TIFF file
+
         Returns:
-            channel_names (list): list of channel names
+            list: list of channel names
         """
         if hasattr(self, "metadata"):
             return list(self.metadata["Channels"].keys())
@@ -70,8 +76,9 @@ class LazyOMETIFFReader(OMETIFFReader):
     
     def get_shape(self):
         """Get the shape of the OME-TIFF file array data
+
         Returns:
-            shape (tuple): shape of the array data
+            tuple: shape of the array data
         """
         with tifffile.imread(str(self.fpath), aszarr=True) as store:
             z = zarr.open(store, mode='r')
@@ -84,10 +91,11 @@ class LazyOMETIFFReader(OMETIFFReader):
 
     def get_channel(self, channel_name: str):
         """Get an individual channel from the OME-TIFF file by name
+
         Args:
             channel_name (str): name of the channel
         Returns:
-            channel (np.array): channel image
+            np.array: channel image
         """
         idx = self.channels.index(channel_name)
         with tifffile.imread(str(self.fpath), aszarr=True) as store:
@@ -109,12 +117,14 @@ class LazyOMETIFFReader(OMETIFFReader):
         return channel
 
 
-def handle_qupath_segmentation_map(instance_mask: np.array):
-    """Handle QuPath segmentation maps stored as 24-bit RGB images
+def _handle_qupath_segmentation_map(instance_mask: np.array):
+    """Handle QuPath segmentation maps stored as 24-bit RGB images. The RGB channels are combined
+    into a single channel via the following formula: label = RED*256**2 + GREEN * 256 + BLUE
+
     Args:
         instance_mask (np.array): instance mask
     Returns:
-        instance_mask (np.array): instance mask
+        np.array: instance mask
     """
     # add warning
     logging.warning("QuPath RGB segmentation map detected. Converting to instance map by")
@@ -130,19 +140,20 @@ def handle_qupath_segmentation_map(instance_mask: np.array):
 
 
 class MultiplexDataset():
+    """Multiplex dataset class that gives a common interface for data loading of multiplex
+    datasets stored as individual channel images in folders or as multi-channel tiffs.
+
+    Args:
+        fov_paths (list): list of paths to fovs
+        segmentation_naming_convention (function): function to get instance mask path from fov
+            path
+        suffix (str): suffix of channel images
+        silent (bool): whether to print messages
+    """
     def __init__(
             self, fov_paths: list, segmentation_naming_convention: Callable = None,
             include_channels: list = [], suffix: str = ".tiff", silent=False,
         ):
-        """Multiplex dataset class that gives a common interface for data loading of multiplex
-        datasets stored as individual channel images in folders or as multi-channel tiffs.
-        Args:
-            fov_paths (list): list of paths to fovs
-            segmentation_naming_convention (function): function to get instance mask path from fov
-            path
-            suffix (str): suffix of channel images
-            silent (bool): whether to print messages
-        """
         self.fov_paths = fov_paths
         self.segmentation_naming_convention = segmentation_naming_convention
         self.suffix = suffix
@@ -158,17 +169,18 @@ class MultiplexDataset():
 
     def filter_channels(self, channels):
         """Filter channels based on include_channels
+
         Args:
             channels (list): list of channel names
         Returns:
-            channels (list): filtered list of channel names
+            list: filtered list of channel names
         """
         if self.include_channels:
             return [channel for channel in channels if channel in self.include_channels]
         return channels
 
     def check_inputs(self):
-        """check inputs for Nimbus model"""
+        """Check inputs for Nimbus model"""
         # check if all paths in fov_paths exists
         if not isinstance(self.fov_paths, (list, tuple)):
             self.fov_paths = [self.fov_paths]
@@ -187,10 +199,11 @@ class MultiplexDataset():
     
     def is_multi_channel_tiff(self, fov_path: str):
         """Check if fov is a multi-channel tiff
+
         Args:
             fov_path (str): path to fov
         Returns:
-            multi_channel (bool): whether fov is multi-channel
+            bool: whether fov is multi-channel
         """
         multi_channel = False
         if fov_path.lower().endswith(("ome.tif", "ome.tiff")):
@@ -216,11 +229,12 @@ class MultiplexDataset():
     
     def get_channel(self, fov: str, channel: str):
         """Get a channel from a fov
+
         Args:
             fov (str): name of a fov
             channel (str): channel name
         Returns:
-            channel (np.array): channel image
+            np.array: channel image
         """
         if self.multi_channel:
             return self.get_channel_stack(fov, channel)
@@ -229,11 +243,12 @@ class MultiplexDataset():
 
     def get_channel_single(self, fov: str, channel: str):
         """Get a channel from a fov stored as a folder with individual channel images
+
         Args:
             fov (str): name of a fov
             channel (str): channel name
         Returns:
-            channel (np.array): channel image
+            np.array: channel image
         """
         idx = self.fovs.index(fov)
         fov_path = self.fov_paths[idx]
@@ -243,12 +258,13 @@ class MultiplexDataset():
 
     def get_channel_stack(self, fov: str, channel: str):
         """Get a channel from a multi-channel tiff
+
         Args:
             fov (str): name of a fov
             channel (str): channel name
             data_format (str): data format
         Returns:
-            channel (np.array): channel image
+            np.array: channel image
         """
         idx = self.fovs.index(fov)
         fov_path = self.fov_paths[idx]
@@ -257,10 +273,11 @@ class MultiplexDataset():
     
     def get_segmentation(self, fov: str):
         """Get the instance mask for a fov
+
         Args:
             fov (str): name of a fov
         Returns:
-            instance_mask (np.array): instance mask
+            np.array: instance mask
         """
         idx = self.fovs.index(fov)
         fov_path = self.fov_paths[idx]
@@ -271,18 +288,19 @@ class MultiplexDataset():
             instance_mask = instance_path
         instance_mask = np.squeeze(instance_mask)
         if len(instance_mask.shape) == 3:
-            instance_mask = handle_qupath_segmentation_map(instance_mask)
+            instance_mask = _handle_qupath_segmentation_map(instance_mask)
         instance_mask = instance_mask.astype(np.uint32)
         return instance_mask
 
 
 def prepare_input_data(mplex_img, instance_mask):
     """Prepares the input data for the segmentation model
+
     Args:
         mplex_img (np.array): multiplex image
         instance_mask (np.array): instance mask
     Returns:
-        input_data (np.array): input data for segmentation model
+        np.array: input data for segmentation model
     """
     mplex_img = mplex_img.astype(np.float32)
     edge = find_boundaries(instance_mask, mode="inner").astype(np.uint8)
@@ -293,12 +311,13 @@ def prepare_input_data(mplex_img, instance_mask):
 
 def segment_mean(instance_mask, prediction):
     """Calculates the mean prediction per instance
+
     Args:
         instance_mask (np.array): instance mask
         prediction (np.array): prediction
     Returns:
-        uniques (np.array): unique instance ids
-        mean_per_cell (np.array): mean prediction per instance
+        np.array: unique instance ids
+        np.array: mean prediction per instance
     """
     props_df = regionprops_table(
         label_image=instance_mask, intensity_image=prediction,
@@ -311,6 +330,7 @@ def test_time_aug(
         input_data, channel, app, normalization_dict, rotate=True, flip=True, batch_size=4
     ):
     """Performs test time augmentation
+
     Args:
         input_data (np.array): input data for segmentation model, mplex_img and binary mask
         channel (str): channel name
@@ -320,7 +340,7 @@ def test_time_aug(
         flip (bool): whether to flip
         batch_size (int): batch size
     Returns:
-        seg_map (np.array): predicted segmentation map
+        np.array: predicted segmentation map
     """
     forward_augmentations = []
     backward_augmentations = []
@@ -365,6 +385,7 @@ def predict_fovs(
         half_resolution: bool=False, batch_size: int=4, test_time_augmentation: bool=True
     ):
     """Predicts the segmentation map for each mplex image in each fov
+
     Args:
         nimbus (Nimbus): nimbus object
         dataset (MultiplexDataset): dataset object
@@ -376,7 +397,7 @@ def predict_fovs(
         batch_size (int): batch size
         test_time_augmentation (bool): whether to use test time augmentation
     Returns:
-        cell_table (pd.DataFrame): cell table with predicted confidence scores per fov and cell
+        pd.DataFrame: cell table with predicted confidence scores per fov and cell
     """
     fov_dict_list = []
     for fov_path, fov in zip(dataset.fov_paths, dataset.fovs):
@@ -434,6 +455,7 @@ def predict_fovs(
 
 def nimbus_preprocess(image, **kwargs):
     """Preprocess input data for Nimbus model.
+
     Args:
         image: array to be processed
     Returns:
@@ -461,11 +483,12 @@ def nimbus_preprocess(image, **kwargs):
 
 def calculate_normalization(dataset: MultiplexDataset, quantile: float):
     """Calculates the normalization values for a given ome file
+
     Args:
         dataset (MultiplexDataset): dataset object
         quantile (float): quantile to use for normalization
     Returns:
-        normalization_values (dict): dict with channel names as keys and norm factors  as values
+        dict: dict with channel names as keys and norm factors  as values
     """
     normalization_values = {}
     for channel in dataset.channels:
@@ -484,6 +507,7 @@ def prepare_normalization_dict(
         n_jobs: int=1, output_name: str="normalization_dict.json"
     ):
     """Prepares the normalization dict for a list of ome.tif fovs
+
     Args:
         MultiplexDataset (list): list of paths to fovs
         output_dir (str): path to output directory
@@ -492,7 +516,7 @@ def prepare_normalization_dict(
         n_jobs (int): number of jobs to use for joblib multiprocessing
         output_name (str): name of output file
     Returns:
-        normalization_dict (dict): dict with channel names as keys and norm factors  as values
+        dict: dict with channel names as keys and norm factors  as values
     """
     normalization_dict = {}
     fov_paths = copy(dataset.fov_paths)

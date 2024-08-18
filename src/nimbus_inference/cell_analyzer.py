@@ -10,19 +10,20 @@ from skimage.segmentation import find_boundaries
 
 
 class CellAnalyzer(object):
+    """Cell Analyzer for Nimbus application, can be used to compare and annotate cell images.
+
+    Args:
+        input_dir (str): Path to directory containing individual channels of multiplexed images
+        cell_df (pd.DataFrame): DataFrame with columns 'pixie_ct', 'nimbus_ct', 'fov', 'label'
+        output_dir (str): Path to save output annotations
+        segmentation_naming_convention (fn): Function that maps input path to segmentation path
+        img_width (str): Width of images in viewer.
+        context (int): area around the cell to display
+    """
     def __init__(
             self, input_dir, cell_df, output_dir,
             segmentation_naming_convention, img_width='1000px', context=None
         ):
-        """Viewer for Nimbus application.
-        Args:
-            input_dir (str): Path to directory containing individual channels of multiplexed images
-            cell_df (pd.DataFrame): DataFrame with columns 'pixie_ct', 'nimbus_ct', 'fov', 'label'
-            output_dir (str): Path to save output annotations
-            segmentation_naming_convention (fn): Function that maps input path to segmentation path
-            img_width (str): Width of images in viewer.
-            context (int): area around the cell to display
-        """
         self.image_width = img_width
         self.input_dir = input_dir
         self.segmentation_naming_convention = segmentation_naming_convention
@@ -92,6 +93,7 @@ class CellAnalyzer(object):
 
     def cell_id_select_fn(self, change):
         """Selects fov to display.
+
         Args:
             change (dict): Change dictionary from ipywidgets.
         """
@@ -114,11 +116,12 @@ class CellAnalyzer(object):
 
     def create_composite_image(self, path_dict, add_boundaries=True):
         """Creates composite image from input paths.
+
         Args:
             path_dict (dict): Dictionary of paths to images.
             add_boundaries (bool): Whether to add boundaries to multiplex image.
         Returns:
-            composite_image (np.array): Composite image.
+            np.array: Composite image.
         """
         for k in ["red", "green", "blue"]:
             if k not in path_dict.keys():
@@ -153,11 +156,12 @@ class CellAnalyzer(object):
     
     def create_instance_image(self, path_dict, cell_id):
         """Creates composite image from input paths.
+
         Args:
             path_dict (dict): Dictionary of paths to images.
             cell_id (int): id of cell to highlight
         Returns:
-            composite_image (np.array): Composite image.
+            np.array: Composite image.
         """
         # add overlay of instances
         fov_path = os.path.split(list(path_dict.values())[0])[0]
@@ -205,10 +209,11 @@ class CellAnalyzer(object):
 
     def search_for_similar(self, select_value):
         """Searches for similar filename in input directory.
+
         Args:
             select_value (str): Filename to search for.
         Returns:
-            similar_path (str): Path to similar filename.
+            str: Path to similar filename.
         """
         fov = self.cell_df[self.cell_df["Cell ID"] == self.cell_id_select.value]["fov"].values[0]
         in_f_path = os.path.join(self.input_dir, fov)
@@ -224,6 +229,7 @@ class CellAnalyzer(object):
 
     def update_img(self, image_viewer, composite_image):
         """Updates image in viewer by saving it as png and loading it with the viewer widget.
+
         Args:
             image_viewer (ipywidgets.Image): Image widget to update.
             composite_image (np.array): Composite image to display.
@@ -278,11 +284,19 @@ class CellAnalyzer(object):
         self.update_img(self.output_image, seg_image)
 
     def update_button_click(self, button):
-        """Updates composite image in viewer when update button is clicked."""
+        """Updates composite image in viewer when update button is clicked.
+        
+        Args:
+            button (ipywidgets.Button): Button widget that was clicked.
+        """
         self.update_composite()
     
     def save_annotations_button_click(self, button):
-        """Updates composite image in viewer when pixie button is clicked."""
+        """Updates composite image in viewer when pixie button is clicked.
+        
+        Args:
+            button (ipywidgets.Button): Button widget that was clicked.
+        """
         self.cell_df.loc[
             self.cell_df["Cell ID"] == self.cell_id_select.value, "annotations"
         ] = self.model_button.value
