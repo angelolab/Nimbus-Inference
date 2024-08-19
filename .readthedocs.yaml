@@ -14,5 +14,7 @@ sphinx:
   configuration: docs/conf.py
   # disable this for more lenient docs builds
   fail_on_warning: true
+
 commands:
-  - sphinx-apidoc -F -o ./docs/docu src
+  - command: sphinx-apidoc -F -o ./docs/docu src
+  - type: before_build
