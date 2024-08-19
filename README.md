@@ -2,10 +2,9 @@
 <img src="https://github.com/angelolab/Nimbus-Inference/blob/main/assets/nimbus_logo.png">
 </p>
 
+![CI](https://github.com/angelolab/Nimbus-Inference/actions/workflows/ci.yaml/badge.svg)
+[![Documentation Status](https://readthedocs.org/projects/nimbus-inference/badge/?version=latest)](https://nimbus-inference.readthedocs.io/en/latest/?badge=latest)
 
-[badge-tests]: https://img.shields.io/github/actions/workflow/status/angelolab/Nimbus-Inference/test.yaml?branch=main
-[link-tests]: https://github.com/angelolab/Nimbus-Inference/actions/workflows/test.yml
-[badge-docs]: https://img.shields.io/readthedocs/Nimbus-Inference
 
 The Nimbus repo contains code for inference of a machine learning model that classifies cells into marker positive/negative for arbitrary protein markers and different imaging platforms.
 

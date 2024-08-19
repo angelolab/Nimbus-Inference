@@ -8,13 +8,14 @@ def _get_filter_count(layer_idx, filters_root):
 
 
 class Pad2D(nn.Module):
+    """ Padding for 2D input (e.g. images).
+
+    Args:
+        padding: tuple of 2 ints, how many zeros to add at the beginning and at the end of
+            the 2 padding dimensions (rows and cols)
+        mode: "constant", "reflect", or "replicate"
+    """
     def __init__(self, padding=(1, 1), mode="constant"):
-        """ Padding for 2D input (e.g. images).
-        Args:
-            padding: tuple of 2 ints, how many zeros to add at the beginning and at the end of
-                the 2 padding dimensions (rows and cols)
-            mode: "constant", "reflect", or "replicate"
-        """
         super(Pad2D, self).__init__()
         if mode not in ["constant", "reflect", "replicate", "valid"]:
             raise ValueError("Padding mode must be 'valid', 'constant', 'reflect', or 'replicate'")
@@ -22,6 +23,13 @@ class Pad2D(nn.Module):
         self.mode = mode
 
     def forward(self, x):
+        """Pad 2D input tensor x.
+        
+        Args:
+            x (torch.Tensor): 4D input tensor (B, C, H, W)
+        Returns:
+            torch.Tensor: 4D output tensor (B, C, H + 2*padding[0], W + 2*padding[1])
+        """
         if self.mode =="valid":
             return x
         else:
@@ -30,12 +38,13 @@ class Pad2D(nn.Module):
 
 def maybe_crop(x, target_shape, data_format="channels_first"):
     """Center crops x to target_shape if necessary.
+
     Args:
-        x: input tensor
-        target_shape: shape of a reference tensor in BHWC or BCHW format
-        data_format: data format, either "channels_last" or "channels_first"
+        x (torch.Tensor): input tensor
+        target_shape (list): shape of a reference tensor in BHWC or BCHW format
+        data_format (str): data format, either "channels_last" or "channels_first"
     Returns:
-        cropped tensor
+        x (torch.Tensor): cropped tensor
     """
     if data_format == "channels_last":
         target_shape = target_shape[1:3]
@@ -62,20 +71,19 @@ def maybe_crop(x, target_shape, data_format="channels_first"):
 
 class ConvBlock(nn.Module):
     """Convolutional block consisting of two convolutional layers with same number of filters
-    and a batch normalization layer in between.
+        and a batch normalization layer in between.
+
+    Args:
+        layer_idx (int): index of the layer, used to compute the number of filters
+        filters_root (int): number of filters in the first convolutional layer
+        kernel_size (int): size of convolutional kernels
+        padding: padding, either "VALID", "CONSTANT", "REFLECT", or "SYMMETRIC"
+            activation: activation to be used
+        data_format: data format, either "channels_last" or "channels_first"
     """
     def __init__(
             self, layer_idx, filters_root, kernel_size, padding, activation, up=False, **kwargs,
         ):
-        """Initialize ConvBlock.
-        Args:
-            layer_idx: index of the layer, used to compute the number of filters
-            filters_root: number of filters in the first convolutional layer
-            kernel_size: size of convolutional kernels
-            padding: padding, either "VALID", "CONSTANT", "REFLECT", or "SYMMETRIC"
-            activation: activation to be used
-            data_format: data format, either "channels_last" or "channels_first"
-        """
         super(ConvBlock, self).__init__(**kwargs)
         self.layer_idx=layer_idx
         self.filters_root=filters_root
@@ -109,6 +117,13 @@ class ConvBlock(nn.Module):
         self.bn_2 = nn.BatchNorm2d(filters)
 
     def forward(self, x):
+        """Apply ConvBlock to inputs.
+
+        Args:
+            x (torch.Tensor): input tensor
+        Returns:
+            torch.Tensor: output tensor
+        """
         skip = self.conv2d_0(x)
         x = self.padding_layer(skip)
         x = self.conv2d_1(x)
@@ -126,20 +141,19 @@ class ConvBlock(nn.Module):
 
 class UpconvBlock(nn.Module):
     """Upconvolutional block consisting of an upsampling layer and a convolutional layer.
+
+    Args:
+        layer_idx (int): index of the layer, used to compute the number of filters
+        filters_root (int): number of filters in the first convolutional layer
+        kernel_size (tuple): size of convolutional kernels
+        pool_size (tuple): size of the pooling layer
+        padding (str): padding, either "VALID", "CONSTANT", "REFLECT", or "SYMMETRIC"
+        activation (fn): activation to be used
+        data_format (str): data format, either "channels_last" or "channels_first"
     """
     def __init__(
             self, layer_idx, filters_root, kernel_size, pool_size, padding, activation, **kwargs
         ):
-        """UpconvBlock initializer.
-        Args:
-            layer_idx: index of the layer, used to compute the number of filters
-            filters_root: number of filters in the first convolutional layer
-            kernel_size: size of convolutional kernels
-            pool_size: size of the pooling layer
-            padding: padding, either "VALID", "CONSTANT", "REFLECT", or "SYMMETRIC"
-            activation: activation to be used
-            data_format: data format, either "channels_last" or "channels_first"
-        """
         super(UpconvBlock, self).__init__(**kwargs)
         self.layer_idx=layer_idx
         self.filters_root=filters_root
@@ -157,6 +171,13 @@ class UpconvBlock(nn.Module):
         self.activation_1 = getattr(nn, activation)()
 
     def forward(self, x):
+        """Apply UpconvBlock to inputs.
+        
+        Args:
+            x (torch.Tensor): input tensor
+        Returns:
+            torch.Tensor: output tensor
+        """
         # x = self.padding_layer(x)
         x = self.upconv(x)
         x = self.activation_1(x)
@@ -165,21 +186,21 @@ class UpconvBlock(nn.Module):
 
 class CropConcatBlock(nn.Module):
     """CropConcatBlock that crops spatial dimensions and concatenates filter maps.
+
+    Args:
+        data_format (str): data format, either "channels_last" or "channels_first"
     """
     def __init__(self, **kwargs):
-        """CropConcatBlock initializer.
-        Args:
-            data_format: data format, either "channels_last" or "channels_first"
-        """
         super(CropConcatBlock, self).__init__(**kwargs)
 
     def forward(self, x, down_layer):
         """Apply CropConcatBlock to inputs.
+
         Args:
-            x: input tensor
-            down_layer: tensor from the contracting path
+            x (torch.Tensor): input tensor
+            down_layer (torch.Tensor): tensor from the contracting path
         Returns:
-            output tensor
+            torch.Tensor: output tensor
         """
         x1_shape = down_layer.shape
         x2_shape = x.shape
@@ -193,6 +214,18 @@ class CropConcatBlock(nn.Module):
 
 
 class UNet(nn.Module):
+    """UNet model with contracting and expanding paths.
+
+    Args:
+        num_classes (int): number of classes
+        layer_depth (int): number of layers
+        filters_root (int): number of filters in the first convolutional layer
+        data_format: data format, either "channels_last" or "channels_first"
+        kernel_size (int): size of convolutional kernels
+        pool_size (int): size of the pooling layer
+        padding (str): padding, either "VALID", "CONSTANT", "REFLECT", or "SYMMETRIC"
+        activation (str): activation to be used
+    """
     def __init__(self, 
                  num_classes: int = 2,
                  layer_depth: int = 5,
@@ -238,6 +271,13 @@ class UNet(nn.Module):
             self.to(memory_format=torch.channels_last)
 
     def forward(self, x):
+        """Forward pass of the UNet model.
+        
+        Args:
+            x (torch.Tensor): input tensor
+        Returns:
+            torch.Tensor: output tensor
+        """
         contracting_outputs = []
         for layer in self.contracting_layers:
             x = layer(x)
@@ -252,13 +292,3 @@ class UNet(nn.Module):
                 x = layer(x)
         x = self.final_conv(x)
         return torch.sigmoid(x)
-
-
-if __name__ == "__main__":
-    model = UNet(num_classes=1)
-    x = torch.rand(1,2,512,512)
-    out = model(x)
-    from torchsummary import summary
-    model = model.cuda()
-    summary(model, (2, 512, 512))
-    print(out.shape)

@@ -20,8 +20,14 @@ import re
 
 def nimbus_preprocess(image, **kwargs):
     """Preprocess input data for Nimbus model.
+
     Args:
-        image: array to be processed
+        image (np.array): array to be processed
+        **kwargs: keyword arguments for preprocessing:
+            {normalize (bool): whether to normalize the image,
+            marker (str): name of marker,
+            normalization_dict (dict): normalization dictionary,
+            clip_values (tuple): min/max values to clip the image to after normalization}
     Returns:
         np.array: processed image array
     """
@@ -32,7 +38,7 @@ def nimbus_preprocess(image, **kwargs):
     normalize = kwargs.get("normalize", True)
     if normalize:
         marker = kwargs.get("marker", None)
-        if re.search(".tiff|.tiff|.png|.jpg|.jpeg", marker, re.IGNORECASE):
+        if re.search(".tif|.tiff|.png|.jpg|.jpeg", marker, re.IGNORECASE):
             marker = marker.split(".")[0]
         normalization_dict = kwargs.get("normalization_dict", {})
         if marker in normalization_dict.keys():
@@ -54,20 +60,22 @@ def nimbus_preprocess(image, **kwargs):
 
 
 def prep_naming_convention(deepcell_output_dir):
-    """Prepares the naming convention for the segmentation data
+    """Prepares the naming convention for the segmentation data produced with the DeepCell library.
+
     Args:
         deepcell_output_dir (str): path to directory where segmentation data is saved
     Returns:
-        segmentation_naming_convention (function): function that returns the path to the
+        function: function that returns the path to the
             segmentation data for a given fov
     """
 
     def segmentation_naming_convention(fov_path):
         """Prepares the path to the segmentation data for a given fov
+
         Args:
             fov_path (str): path to fov
         Returns:
-            seg_path (str): paths to segmentation fovs
+            str: paths to segmentation fovs
         """
         fov_name = os.path.basename(fov_path).replace(".ome.tiff", "")
         return os.path.join(deepcell_output_dir, fov_name + "_whole_cell.tiff")
@@ -76,14 +84,8 @@ def prep_naming_convention(deepcell_output_dir):
 
 
 class Nimbus(nn.Module):
-    """Nimbus application class for predicting marker activity for cells in multiplexed images."""
+    """Nimbus application class for predicting marker activity for cells in multiplexed images.
 
-    def __init__(
-        self, dataset: MultiplexDataset, output_dir: str, save_predictions: bool=True,
-        half_resolution: bool=True, batch_size: int=4, test_time_aug: bool=True,
-        input_shape: list=[1024, 1024], device: str="auto",
-    ):
-        """Initializes a Nimbus Application.
         Args:
             dataset (MultiplexDataset): Path to directory containing fovs.
             output_dir (str): Path to directory to save output.
@@ -94,8 +96,13 @@ class Nimbus(nn.Module):
             input_shape (list): Shape of input images.
             suffix (str): Suffix of images to load.
             device (str): Device to run model on, either "auto" (either "mps" or "cuda"
-            , with "cpu" as a fallback), "cpu", "cuda", or "mps". Defaults to "auto".
-        """
+                , with "cpu" as a fallback), "cpu", "cuda", or "mps". Defaults to "auto".
+    """
+    def __init__(
+        self, dataset: MultiplexDataset, output_dir: str, save_predictions: bool=True,
+        half_resolution: bool=True, batch_size: int=4, test_time_aug: bool=True,
+        input_shape: list=[1024, 1024], device: str="auto",
+    ):
         super(Nimbus, self).__init__()
         self.dataset = dataset
         self.output_dir = output_dir
@@ -128,7 +135,9 @@ class Nimbus(nn.Module):
         print("All inputs are valid.")
 
     def initialize_model(self, padding="reflect"):
-        """Initializes the model and loads the latest weights from Hugging Face Hub if newer.
+        """Initializes the model and loads the latest weights from Hugging Face Hub if newer
+        weights are available.
+    
         Args:
             padding (str): Padding mode for model, either "reflect" or "valid".
         """        
@@ -197,6 +206,7 @@ class Nimbus(nn.Module):
         overwrite=False,
     ):
         """Load or prepare and save normalization dictionary for Nimbus model.
+
         Args:
             quantile (float): Quantile to use for normalization.
             clip_values (list): Values to clip images to after normalization.
@@ -219,6 +229,7 @@ class Nimbus(nn.Module):
 
     def predict_fovs(self):
         """Predicts cell classification for input data.
+
         Returns:
             np.array: Predicted cell classification.
         """
@@ -242,6 +253,7 @@ class Nimbus(nn.Module):
 
     def predict_segmentation(self, input_data, preprocess_kwargs):
         """Predicts segmentation for input data.
+
         Args:
             input_data (np.array): Input data to predict segmentation for.
             preprocess_kwargs (dict): Keyword arguments for preprocessing.
@@ -268,6 +280,7 @@ class Nimbus(nn.Module):
 
     def _tile_and_stitch(self, input_data):
         """Predicts segmentation for input data using tile and stitch method.
+
         Args:
             input_data (np.array): Input data to predict segmentation for.
             batch_size (int): Batch size for prediction.
@@ -314,6 +327,7 @@ class Nimbus(nn.Module):
 
     def _tile_input(self, image, tile_size, output_shape, pad_mode="reflect"):
         """Tiles input image for model inference.
+
         Args:
             image (np.array): Image to tile b,c,h,w.
             tile_size (list): Size of input tiles.
@@ -341,6 +355,7 @@ class Nimbus(nn.Module):
 
     def _stitch_tiles(self, tiles, padding):
         """Stitches tiles to reconstruct full image.
+
         Args:
             tiles (np.array): Tiled predictions n_tiles x c x h x w.
             input_shape (list): Shape of input image.
