@@ -25,8 +25,4 @@ jobs:
     - name: Build documentation
       run: |
         sphinx-build -E docs ./docs/build
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: html-docs
-        path: ./docs/build
+# action checks if the documentation builds, build and deployment handled in readthedocs.yaml
