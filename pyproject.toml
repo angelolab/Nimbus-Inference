@@ -3,7 +3,7 @@ build-backend = "hatchling.build"
 requires = ["hatchling"]
 
 [project]
-name = "nimbus_inference"
+name = "Nimbus-Inference"
 version = "0.0.1"
 description = "A very interesting piece of code"
 readme = "README.md"
