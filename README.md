@@ -2,7 +2,7 @@
 <img src="https://github.com/angelolab/Nimbus-Inference/blob/main/assets/nimbus_logo.png">
 </p>
 
-![build](https://github.com/angelolab/Nimbus-Inference/tree/actions/workflows/build.yaml/badge.svg)
+![build](https://github.com/angelolab/Nimbus-Inference/actions/workflows/build.yaml/badge.svg)
 ![tests](https://github.com/angelolab/Nimbus-Inference/actions/workflows/test.yaml/badge.svg)
 [![Documentation Status](https://readthedocs.org/projects/nimbus-inference/badge/?version=latest)](https://nimbus-inference.readthedocs.io/en/latest/?badge=latest)
 
