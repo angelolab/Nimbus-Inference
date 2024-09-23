@@ -50,8 +50,8 @@ priority = "supplemental"
 dev = ["pre-commit", "twine>=4.0.2"]
 doc = [
     "docutils>=0.8,!=0.18.*,!=0.19.*",
-    "sphinx>=4",
-    "sphinx-rtd-theme",
+    "sphinx>=5",
+    "sphinx-rtd-theme>1",
     "sphinx-autodoc-typehints",
     "sphinxext-opengraph",
     # For notebooks
