@@ -6,7 +6,7 @@
     "cookiecutter": {
       "project_name": "Nimbus-Inference",
       "package_name": "nimbus_inference",
-      "project_description": "A very interesting piece of code",
+      "project_description": "A model for classification of cells into marker positive / negative",
       "author_full_name": "Lorenz Rumberger",
       "author_email": "jlrumber@stanford.edu",
       "github_user": "angelolab",

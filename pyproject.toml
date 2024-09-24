@@ -5,7 +5,7 @@ requires = ["hatchling"]
 [project]
 name = "Nimbus-Inference"
 version = "0.0.1"
-description = "A very interesting piece of code"
+description = "A model for classification of cells into marker positive / negative"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
@@ -20,8 +20,7 @@ urls.Source = "https://github.com/angelolab/Nimbus-Inference"
 urls.Home-page = "https://github.com/angelolab/Nimbus-Inference"
 dependencies = [
     "ark-analysis",
-    "torch==2.2.0",
-    "torchvision==0.17.0",
+    "torch>=2.2.0",
     "alpineer",
     "scikit-image",
     "tqdm",
