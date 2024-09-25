@@ -4,38 +4,13 @@
 
 ![CI](https://github.com/angelolab/Nimbus-Inference/actions/workflows/ci.yaml/badge.svg)
 [![Documentation Status](https://readthedocs.org/projects/nimbus-inference/badge/?version=latest)](https://nimbus-inference.readthedocs.io/en/latest/?badge=latest)
-
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1mLt2K9_rqUhr3Z4CLw_znS12KSUVSPzj?usp=sharing)
 
 The Nimbus repo contains code for inference of a machine learning model that classifies cells into marker positive/negative for arbitrary protein markers and different imaging platforms.
 
 ## Installation instructions
 
-Clone the repository
-
-`git clone https://github.com/angelolab/Nimbus-Inference`
-
-
-Make a conda environment for Nimbus and activate it
-
-`conda create -n Nimbus python==3.10`
-
-`conda activate Nimbus`
-
-Install CUDA libraries if you have a NVIDIA GPU available 
-
-`conda install -c conda-forge cudatoolkit=11.8 cudnn=8.2.0`
-
-Install the package and all depedencies in the conda environment
-
-`python -m pip install -e Nimbus-Inference`
-
-
-Navigate to the example notebooks and start jupyter
-
-`cd Nimbus-Inference/templates`
-
-`jupyter notebook`
-
+Create an environment with a Python version between 3.9-3.11 and install this package via `pip install Nimbus-Inference`, then download the template notebook from here [1_Nimbus_Predict.ipynb](https://github.com/angelolab/Nimbus-Inference/blob/main/templates/1_Nimbus_Predict.ipynb) to get started.
 
 ## Release notes
 
