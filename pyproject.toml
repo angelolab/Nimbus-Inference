@@ -38,6 +38,7 @@ dependencies = [
     "natsort",
     "ipython",
     "zarr",
+    "lmdb",
 ]
 
 [[project.source]]

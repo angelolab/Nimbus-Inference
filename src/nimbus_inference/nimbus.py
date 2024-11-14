@@ -90,23 +90,25 @@ class Nimbus(nn.Module):
             dataset (MultiplexDataset): Path to directory containing fovs.
             output_dir (str): Path to directory to save output.
             save_predictions (bool): Whether to save predictions.
-            half_resolution (bool): Whether to run model on half resolution images.
+            model_magnification (int): Expected magnification of images.
             batch_size (int): Batch size for model inference.
             test_time_aug (bool): Whether to use test time augmentation.
             input_shape (list): Shape of input images.
             suffix (str): Suffix of images to load.
             device (str): Device to run model on, either "auto" (either "mps" or "cuda"
                 , with "cpu" as a fallback), "cpu", "cuda", or "mps". Defaults to "auto".
+            checkpoint: which checkpoint to use for the model, either "latest" or one of the local
+                checkpoints.
     """
     def __init__(
         self, dataset: MultiplexDataset, output_dir: str, save_predictions: bool=True,
-        half_resolution: bool=True, batch_size: int=4, test_time_aug: bool=True,
-        input_shape: list=[1024, 1024], device: str="auto",
+        batch_size: int=4, test_time_aug: bool=True, model_magnification: int=10,
+        input_shape: list=[1024, 1024], device: str="auto", 
     ):
         super(Nimbus, self).__init__()
         self.dataset = dataset
         self.output_dir = output_dir
-        self.half_resolution = half_resolution
+        self.model_magnification = model_magnification
         self.save_predictions = save_predictions
         self.batch_size = batch_size
         self.checked_inputs = False
@@ -201,32 +203,6 @@ class Nimbus(nn.Module):
         print(f"Loaded weights from {self.checkpoint_path}")
         self.model = model.to(self.device).eval()
 
-    def prepare_normalization_dict(
-        self, quantile=0.999, clip_values=(0, 2), n_subset=10, multiprocessing=False,
-        overwrite=False,
-    ):
-        """Load or prepare and save normalization dictionary for Nimbus model.
-
-        Args:
-            quantile (float): Quantile to use for normalization.
-            clip_values (list): Values to clip images to after normalization.
-            n_subset (int): Number of fovs to use for normalization.
-            multiprocessing (bool): Whether to use multiprocessing.
-            overwrite (bool): Whether to overwrite existing normalization dict.
-        Returns:
-            dict: Dictionary of normalization factors.
-        """
-        self.clip_values = tuple(clip_values)
-        self.normalization_dict_path = os.path.join(self.output_dir, "normalization_dict.json")
-        if os.path.exists(self.normalization_dict_path) and not overwrite:
-            self.normalization_dict = json.load(open(self.normalization_dict_path))
-        else:
-            n_jobs = os.cpu_count() if multiprocessing else 1
-            self.normalization_dict = prepare_normalization_dict(
-                self.dataset, self.output_dir, quantile, n_subset,
-                n_jobs
-            )
-
     def predict_fovs(self):
         """Predicts cell classification for input data.
 
@@ -235,8 +211,6 @@ class Nimbus(nn.Module):
         """
         if self.checked_inputs == False:
             self.check_inputs()
-        if not hasattr(self, "normalization_dict"):
-            self.prepare_normalization_dict()
         # check if GPU is available
         gpus = torch.cuda.device_count()
         print("Available GPUs: ", gpus)
@@ -244,9 +218,8 @@ class Nimbus(nn.Module):
         print("Iterating through fovs will take a while...")
         self.cell_table = predict_fovs(
             nimbus=self, dataset=self.dataset, output_dir=self.output_dir,
-            normalization_dict=self.normalization_dict, save_predictions=self.save_predictions,
-            half_resolution=self.half_resolution, batch_size=self.batch_size,
-            test_time_augmentation=self.test_time_aug, suffix=self.dataset.suffix,
+            save_predictions=self.save_predictions, batch_size=self.batch_size,
+            test_time_augmentation=self.test_time_aug,
         )
         self.cell_table.to_csv(os.path.join(self.output_dir, "nimbus_cell_table.csv"), index=False)
         return self.cell_table
@@ -261,7 +234,6 @@ class Nimbus(nn.Module):
         Returns:
             np.array: Predicted segmentation.
         """
-        preprocess_kwargs["clip_values"] = self.clip_values
         input_data = nimbus_preprocess(input_data, **preprocess_kwargs)
         if np.all(np.greater_equal(self.input_shape, input_data.shape[-2:])):
             if not hasattr(self, "model") or self.model.padding != "reflect":
