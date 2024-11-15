@@ -1,6 +1,6 @@
 from nimbus_inference.utils import (prepare_normalization_dict, calculate_normalization,
 predict_fovs, prepare_input_data, MultiplexDataset, LazyOMETIFFReader,
-_handle_qupath_segmentation_map, prepare_training_data)
+_handle_qupath_segmentation_map, prepare_training_data, LmdbDataset)
 from nimbus_inference.utils import test_time_aug as tt_aug
 from nimbus_inference.nimbus import Nimbus
 from skimage import io
@@ -516,3 +516,45 @@ def test_prepare_training_data():
                     assert input_data.shape == (2, 256, 256)
                     assert groundtruth.shape == (1, 256, 256)
             env.close()
+
+
+def test_LmdbDataset():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        def segmentation_naming_convention(fov_path):
+            temp_dir_, fov_ = os.path.split(fov_path)
+            fov_ = fov_.split(".")[0]
+            return os.path.join(temp_dir_, "deepcell_output", fov_ + "_whole_cell.tiff")
+        # Prepare mock data
+        fov_paths, _ = prepare_tif_data(
+            num_samples=2, temp_dir=temp_dir, selected_markers=["CD4", "CD56"],
+            shape=(512, 256)
+        )
+        groundtruth_df = pd.read_csv(os.path.join(temp_dir, "groundtruth_df.csv"))
+
+        dataset = MultiplexDataset(
+            fov_paths, segmentation_naming_convention, suffix=".tiff",
+            groundtruth_df=groundtruth_df,
+            output_dir=temp_dir
+        )
+        dataset.prepare_normalization_dict()
+        nimbus = Nimbus(dataset, output_dir=temp_dir)
+
+        # Create output directory
+        output_dir = os.path.join(temp_dir, "lmdb_output")
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Run prepare_training_data function
+        prepare_training_data(nimbus, dataset, output_dir, tile_size=256, map_size=1)
+
+        lmdb_dataset = LmdbDataset(os.path.join(output_dir, "training"))
+        
+        # Test data retrieval and shapes
+        for input_data, groundtruth in lmdb_dataset:
+            
+            # Check shapes
+            assert input_data.shape == (2, 256, 256)
+            assert groundtruth.shape == (1, 256, 256)
+            
+            # Check content matches what we stored
+            assert np.isin(input_data, [0, 1]).all()
+            assert np.isin(groundtruth, [0, 1, 2]).all()

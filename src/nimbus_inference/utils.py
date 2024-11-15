@@ -703,4 +703,36 @@ def prepare_training_data(
                             sample_tile = np.concatenate([input_tile, gt_tile], axis=0) # 3, h, w
                             tile_key = f"{fov}_{channel_name}_{i}_{j}"
                             txn.put(tile_key.encode(), sample_tile.tobytes())
-                    
+        env.close()
+
+
+class LmdbDataset(torch.utils.data.Dataset):
+    """Dataset class for loading data from lmdb files
+
+    Args:
+        lmdb_path (str): path to lmdb file
+    """
+    def __init__(self, lmdb_path: str, tile_size: tuple=(256, 256)):
+        with lmdb.open(lmdb_path, readonly=True, max_dbs=0) as env: 
+            txn = env.begin()
+            # list all keys
+            self.keys = [key.decode() for key, _ in txn.cursor()]
+        self.length = len(self.keys)
+        self.tile_size = tile_size
+        self.lmdb_path = lmdb_path
+
+    def __len__(self):
+        """Return the number of samples in the dataset"""
+        return self.length
+
+    def __getitem__(self, idx):
+        """Return the sample at the specified index"""
+        key = self.keys[idx].encode()
+        with lmdb.open(self.lmdb_path, readonly=True, max_dbs=0) as env: 
+            txn = env.begin()
+            sample = txn.get(key)
+            sample = np.frombuffer(sample, dtype=np.float32)
+            sample = sample.reshape(3, self.tile_size[0], self.tile_size[1])
+            input_data = sample[:2]
+            groundtruth = sample[2:]
+            return input_data, groundtruth
