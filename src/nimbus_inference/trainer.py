@@ -112,7 +112,7 @@ class Trainer:
             self, nimbus: Nimbus, train_dataset: LmdbDataset, validation_dataset: LmdbDataset,
             checkpoint_name: str, batch_size: int=4, learning_rate: float=1e-5,
             weight_decay: float=1e-4, initial_regularization: float=1e-4, num_workers: int=4,
-            label_smoothing: float=0.05, gradient_clip: float=1.0, patience: int=10,
+            label_smoothing: float=0.05, gradient_clip: float=1.0, patience: int=5,
             augmentation_p: float=0.5,
         ):
         self.train_dataset = train_dataset

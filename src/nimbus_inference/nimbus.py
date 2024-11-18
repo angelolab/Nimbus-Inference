@@ -103,7 +103,7 @@ class Nimbus(nn.Module):
     def __init__(
         self, dataset: MultiplexDataset, output_dir: str, save_predictions: bool=True,
         batch_size: int=4, test_time_aug: bool=True, model_magnification: int=10,
-        input_shape: list=[1024, 1024], device: str="auto", 
+        input_shape: list=[1024, 1024], device: str="auto",  checkpoint="latest"
     ):
         super(Nimbus, self).__init__()
         self.dataset = dataset
@@ -114,6 +114,7 @@ class Nimbus(nn.Module):
         self.checked_inputs = False
         self.test_time_aug = test_time_aug
         self.input_shape = input_shape
+        self.checkpoint = checkpoint
         if self.output_dir != "":
             os.makedirs(self.output_dir, exist_ok=True)
 
@@ -136,7 +137,46 @@ class Nimbus(nn.Module):
         self.checked_inputs = True
         print("All inputs are valid.")
 
-    def initialize_model(self, padding="reflect"):
+    def list_checkpoints(self, padding="reflect"):
+        """List available checkpoints in the Nimbus package.
+
+        Args:
+            padding (str): Padding mode for model, either "reflect" or "valid".
+        Returns:
+            list: List of available checkpoints.
+        """
+        path = os.path.dirname(nimbus_inference.__file__)
+        path = Path(path).resolve()
+        local_dir = os.path.join(path, "assets")
+        os.makedirs(local_dir, exist_ok=True)
+        version_pattern = re.compile(r'V(\d+)\.pt')
+        local_checkpoints = [f for f in os.listdir(local_dir) if version_pattern.search(f)]
+        return local_checkpoints
+    
+    def load_local_checkpoint(self, checkpoint, padding="reflect"):
+        """Loads a local checkpoint for the model.
+        
+        Args:
+            checkpoint (str): Checkpoint to load.
+            padding (str): Padding mode for model, either "reflect" or "valid".
+        """
+        path = os.path.dirname(nimbus_inference.__file__)
+        path = Path(path).resolve()
+        local_dir = os.path.join(path, "assets")
+        os.makedirs(local_dir, exist_ok=True)
+        version_pattern = re.compile(r'V(\d+)\.pt')
+        local_checkpoints = [f for f in os.listdir(local_dir) if version_pattern.search(f)]
+        if checkpoint not in local_checkpoints:
+            raise ValueError(
+                f"Checkpoint {checkpoint} not found in local checkpoints {local_checkpoints}"
+            )
+        self.checkpoint_path = os.path.join(local_dir, checkpoint)
+        model = UNet(num_classes=1, padding=padding)
+        model.load_state_dict(torch.load(self.checkpoint_path))
+        print(f"Loaded weights from {self.checkpoint_path}")
+        self.model = model.to(self.device).eval()
+
+    def load_latest_checkpoint(self, padding="reflect"):
         """Initializes the model and loads the latest weights from Hugging Face Hub if newer
         weights are available.
     
@@ -203,6 +243,17 @@ class Nimbus(nn.Module):
         print(f"Loaded weights from {self.checkpoint_path}")
         self.model = model.to(self.device).eval()
 
+    def load_checkpoint(self, padding="reflect"):
+        """Loads the model checkpoint.
+
+        Args:
+            padding (str): Padding mode for model, either "reflect" or "valid".
+        """
+        if self.checkpoint == "latest":
+            self.load_latest_checkpoint(padding)
+        else:
+            self.load_local_checkpoint(self.checkpoint, padding)
+
     def predict_fovs(self):
         """Predicts cell classification for input data.
 
@@ -237,7 +288,7 @@ class Nimbus(nn.Module):
         input_data = nimbus_preprocess(input_data, **preprocess_kwargs)
         if np.all(np.greater_equal(self.input_shape, input_data.shape[-2:])):
             if not hasattr(self, "model") or self.model.padding != "reflect":
-                self.initialize_model(padding="reflect")
+                self.load_checkpoint(padding="reflect")
             with torch.no_grad():
                 if not isinstance(input_data, torch.Tensor):
                     input_data = torch.tensor(input_data).float()
@@ -246,7 +297,7 @@ class Nimbus(nn.Module):
                 prediction = prediction.cpu()
         else:
             if not hasattr(self, "model") or self.model.padding != "valid":
-                self.initialize_model(padding="valid")
+                self.load_checkpoint(padding="valid")
             prediction = self._tile_and_stitch(input_data)
         return prediction
 

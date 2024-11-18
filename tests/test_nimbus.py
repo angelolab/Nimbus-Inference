@@ -6,6 +6,8 @@ from nimbus_inference.utils import MultiplexDataset
 from nimbus_inference.nimbus import Nimbus, prep_naming_convention
 from nimbus_inference.unet import UNet
 from skimage.data import astronaut
+import nimbus_inference
+from pathlib import Path
 from skimage.transform import rescale
 import numpy as np
 import torch
@@ -23,22 +25,22 @@ def test_check_inputs():
         nimbus.check_inputs()
 
 
-def test_initialize_model():
+def test_load_latest_checkpoint():
     dataset = MultiplexDataset(["tests"])
     nimbus = Nimbus(
         dataset, output_dir="",
         input_shape=[512,512], batch_size=4
     )
-    nimbus.initialize_model(padding="valid")
+    nimbus.load_latest_checkpoint(padding="valid")
     assert isinstance(nimbus.model, UNet)
     assert nimbus.model.padding == "valid"
-    nimbus.initialize_model(padding="reflect")
+    nimbus.load_latest_checkpoint(padding="reflect")
     assert isinstance(nimbus.model, UNet)
     assert nimbus.model.padding == "reflect"
     # test if model gets loaded in offline mode when it was loaded from huggingface hub before
     nimbus.model = None
     disable_socket()
-    nimbus.initialize_model(padding="valid")
+    nimbus.load_latest_checkpoint(padding="valid")
     assert isinstance(nimbus.model, UNet)
 
 
@@ -70,9 +72,81 @@ def test_tile_and_stitch():
             np.isclose(image, out, rtol=1e-4)
         )
     # check if tile and stitch works with the real model
-    nimbus.initialize_model(padding="valid")
+    nimbus.load_latest_checkpoint(padding="valid")
     image = np.random.rand(1, 2, 768, 768)
     prediction = nimbus._tile_and_stitch(image)
     assert prediction.shape == (1, 1, 768, 768)
     assert prediction.max() <= 1
     assert prediction.min() >= 0        
+
+
+def test_load_local_checkpoint():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Setup basic dataset
+        dataset = MultiplexDataset(["tests"])
+        nimbus = Nimbus(dataset, output_dir="")
+
+        # Create mock checkpoint
+        path = os.path.dirname(nimbus_inference.__file__)
+        path = Path(path).resolve()
+        local_dir = os.path.join(path, "assets")
+        os.makedirs(local_dir, exist_ok=True)
+        mock_checkpoint = "V1.pt"
+        checkpoint_path = os.path.join(local_dir, mock_checkpoint)
+        
+        # Save mock model state
+        mock_model = UNet(num_classes=1, padding="reflect")
+        torch.save(mock_model.state_dict(), checkpoint_path)
+
+        # Test successful loading with reflect padding
+        nimbus.load_local_checkpoint(mock_checkpoint, padding="reflect")
+        assert isinstance(nimbus.model, UNet)
+        assert nimbus.model.padding == "reflect"
+        assert nimbus.checkpoint_path == checkpoint_path
+
+        # Test successful loading with valid padding
+        nimbus.load_local_checkpoint(mock_checkpoint, padding="valid")
+        assert isinstance(nimbus.model, UNet)
+        assert nimbus.model.padding == "valid"
+
+        # Test invalid checkpoint name
+        with pytest.raises(ValueError) as exc_info:
+            nimbus.load_local_checkpoint("invalid_checkpoint.pt")
+        assert "not found in local checkpoints" in str(exc_info.value)
+
+        # Test model is on correct device
+        assert next(nimbus.model.parameters()).device == nimbus.device
+
+        # Test model is in eval mode
+        assert not nimbus.model.training
+
+        # Cleanup
+        os.remove(checkpoint_path)
+
+
+def test_list_checkpoints():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Setup basic dataset
+        dataset = MultiplexDataset(["tests"])
+        nimbus = Nimbus(dataset, output_dir=temp_dir)
+
+        # Create mock checkpoints
+        path = os.path.dirname(nimbus_inference.__file__)
+        path = Path(path).resolve()
+        local_dir = os.path.join(path, "assets")
+        os.makedirs(local_dir, exist_ok=True)
+        mock_checkpoints = ["V1.pt", "V2.pt"]
+        for checkpoint in mock_checkpoints:
+            open(os.path.join(local_dir, checkpoint), 'a').close()
+
+        # List checkpoints
+        checkpoints = nimbus.list_checkpoints()
+        assert set(checkpoints) == set(mock_checkpoints)
+
+        # Cleanup
+        for checkpoint in mock_checkpoints:
+            os.remove(os.path.join(local_dir, checkpoint))
+
+        # Test empty directory
+        checkpoints = nimbus.list_checkpoints()
+        assert checkpoints == []
