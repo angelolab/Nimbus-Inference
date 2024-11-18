@@ -87,7 +87,7 @@ def test_trainer_init():
         # Check attributes
         assert trainer.batch_size == 4
         assert trainer.gradient_clip == 1.0
-        assert trainer.patience == 10
+        assert trainer.patience == 5
         assert trainer.best_f1 == 0.0
         assert trainer.epochs_without_improvement == 0
         assert isinstance(trainer.augmenter, AugmentationPipeline)
