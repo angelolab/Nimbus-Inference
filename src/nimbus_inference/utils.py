@@ -390,7 +390,7 @@ def segment_mean(instance_mask, prediction):
         np.array: mean prediction per instance
     """
     props_df = regionprops_table(
-        label_image=instance_mask, intensity_image=prediction,
+        label_image=instance_mask.astype(np.int32), intensity_image=prediction,
         properties=['label' , 'centroid', 'intensity_mean']
     )
     return props_df
@@ -689,19 +689,25 @@ def prepare_training_data(
                             groundtruth.astype(np.uint8), [int(w*scale), int(h*scale)],
                             interpolation=0
                         )[np.newaxis, ...] # 1, h, w
+                        inst_mask = cv2.resize(
+                            instance_mask.astype(np.uint8), [int(w*scale), int(h*scale)],
+                            interpolation=0
+                        )[np.newaxis, ...]
                     # mirror pad and tile data
                     h, w = input_data.shape[-2:]
                     h_pad = h % tile_size
                     w_pad = w % tile_size
                     input_data = np.pad(input_data, ((0, 0), (0,h_pad), (0,w_pad)), mode="reflect")
                     groundtruth = np.pad(groundtruth, ((0, 0), (0,h_pad), (0,w_pad)), mode="reflect")
+                    inst_mask = np.pad(inst_mask, ((0, 0), (0,h_pad), (0,w_pad)), mode="reflect")
                     h, w = input_data.shape[-2:]
                     for i in range(0, h, tile_size):
                         for j in range(0, w, tile_size):
                             input_tile = input_data[..., i:i+tile_size, j:j+tile_size] # 2, h, w
                             gt_tile = groundtruth[..., i:i+tile_size, j:j+tile_size] # 1, h, w
-                            sample_tile = np.concatenate([input_tile, gt_tile], axis=0) # 3, h, w
-                            tile_key = f"{fov}_{channel_name}_{i}_{j}"
+                            inst_tile = inst_mask[..., i:i+tile_size, j:j+tile_size]
+                            sample_tile = np.concatenate([input_tile, gt_tile, inst_tile], axis=0)
+                            tile_key = f"{fov}_,_{channel_name}_,_{i}_,_{j}"
                             txn.put(tile_key.encode(), sample_tile.tobytes())
         env.close()
 
@@ -732,7 +738,8 @@ class LmdbDataset(torch.utils.data.Dataset):
             txn = env.begin()
             sample = txn.get(key)
             sample = np.frombuffer(sample, dtype=np.float32)
-            sample = sample.reshape(3, self.tile_size[0], self.tile_size[1])
+            sample = sample.reshape(4, self.tile_size[0], self.tile_size[1])
             input_data = sample[:2]
-            groundtruth = sample[2:]
-            return input_data, groundtruth
+            groundtruth = sample[2:3]
+            inst_mask = sample[3:]
+            return input_data, groundtruth, inst_mask, self.keys[idx]

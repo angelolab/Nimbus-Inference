@@ -39,6 +39,7 @@ dependencies = [
     "ipython",
     "zarr",
     "lmdb",
+    "kornia",
 ]
 
 [[project.source]]

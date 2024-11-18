@@ -19,10 +19,13 @@ class MockModel(torch.nn.Module):
     def __init__(self, padding):
         super(MockModel, self).__init__()
         self.padding = padding
+        self.param = torch.nn.Parameter(torch.tensor([1.0]))
         self.fn = torch.nn.Identity()
+        self.device = torch.device("cpu")
     
     def forward(self, x):
-        return self.fn(x)
+        x = x.mean(1).unsqueeze(1)
+        return torch.nn.functional.sigmoid(self.fn(x) * self.param)
 
 
 def prepare_tif_data(
@@ -256,7 +259,7 @@ def test_tt_aug():
             batch_size=32
         )
         # check if we get the correct shape
-        assert pred_map.shape == (2, 512, 256)
+        assert pred_map.shape == (512, 256)
 
         pred_map_2 = tt_aug(
             input_data, channel, nimbus, dataset.normalization_dict, rotate=False, flip=True,
@@ -509,12 +512,14 @@ def test_prepare_training_data():
                 cursor = txn.cursor()
                 for key, value in cursor:
                     sample = np.frombuffer(value, dtype=np.float32)
-                    sample = sample.reshape(3, 256, 256)  # Full shape is [3, tile_size, tile_size]
+                    sample = sample.reshape(4, 256, 256)  # Full shape is [3, tile_size, tile_size]
                     input_data = sample[:2]
-                    groundtruth = sample[2:]
+                    groundtruth = sample[2:3]
+                    inst_mask = sample[3:4]
                     # Check if input_data and groundtruth have the correct shape
                     assert input_data.shape == (2, 256, 256)
                     assert groundtruth.shape == (1, 256, 256)
+                    assert inst_mask.shape == (1, 256, 256)
             env.close()
 
 
@@ -549,12 +554,16 @@ def test_LmdbDataset():
         lmdb_dataset = LmdbDataset(os.path.join(output_dir, "training"))
         
         # Test data retrieval and shapes
-        for input_data, groundtruth in lmdb_dataset:
+        for input_data, groundtruth, inst_mask, key in lmdb_dataset:
             
             # Check shapes
             assert input_data.shape == (2, 256, 256)
             assert groundtruth.shape == (1, 256, 256)
+            assert inst_mask.shape == (1, 256, 256)
+            assert isinstance(key, str)
             
             # Check content matches what we stored
             assert np.isin(input_data, [0, 1]).all()
             assert np.isin(groundtruth, [0, 1, 2]).all()
+            assert np.isin(inst_mask, np.arange(16)).all()
+            assert key in lmdb_dataset.keys
