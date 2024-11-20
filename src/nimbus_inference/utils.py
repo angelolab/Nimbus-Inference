@@ -284,6 +284,27 @@ class MultiplexDataset():
             return self.get_channel_stack(fov, channel)
         else:
             return self.get_channel_single(fov, channel)
+        
+    def get_channel_normalized(self, fov: str, channel: str):
+        """Get a channel from a fov and normalize it
+
+        Args:
+            fov (str): name of a fov
+            channel (str): channel name
+        Returns:
+            np.array: channel image
+        """
+        if not hasattr(self, "normalization_dict"):
+            print("No normalization dict found. Preparing normalization dict...")
+            self.prepare_normalization_dict()
+        mplex_img = self.get_channel(fov, channel)
+        if channel in self.normalization_dict.keys():
+            norm_factor = self.normalization_dict[channel]
+        else:
+            norm_factor = np.quantile(mplex_img, 0.999)
+        mplex_img /= norm_factor
+        mplex_img = mplex_img.clip(0, 1)
+        return mplex_img
 
     def get_channel_single(self, fov: str, channel: str):
         """Get a channel from a fov stored as a folder with individual channel images
@@ -297,8 +318,8 @@ class MultiplexDataset():
         idx = self.fovs.index(fov)
         fov_path = self.fov_paths[idx]
         channel_path = os.path.join(fov_path, channel + self.suffix)
-        channel = np.squeeze(io.imread(channel_path))
-        return channel
+        mplex_img = np.squeeze(io.imread(channel_path))
+        return mplex_img
 
     def get_channel_stack(self, fov: str, channel: str):
         """Get a channel from a multi-channel tiff
@@ -433,14 +454,7 @@ def test_time_aug(
     output = []
     for forw_aug, backw_aug in zip(forward_augmentations, backward_augmentations):
         input_data_aug = forw_aug(input_data).numpy() # bhwc
-        seg_map = app.predict_segmentation(
-            input_data_aug,
-            preprocess_kwargs={
-                "normalize": True,
-                "marker": channel,
-                "normalization_dict": normalization_dict,
-                "clip_values": clip_values},
-            )
+        seg_map = app.predict_segmentation(input_data_aug)
         if not isinstance(seg_map, torch.Tensor):
             seg_map = torch.from_numpy(seg_map)
         seg_map = backw_aug(seg_map)
@@ -477,7 +491,7 @@ def predict_fovs(
         df_fov = pd.DataFrame()
         instance_mask = dataset.get_segmentation(fov)
         for channel_name in tqdm(dataset.channels):
-            mplex_img = dataset.get_channel(fov, channel_name)
+            mplex_img = dataset.get_channel_normalized(fov, channel_name)
             input_data = prepare_input_data(mplex_img, instance_mask)
             if dataset.magnification != nimbus.model_magnification:
                 scale = nimbus.model_magnification / dataset.magnification
@@ -494,14 +508,7 @@ def predict_fovs(
                     batch_size=batch_size, clip_values=dataset.clip_values
                 )
             else:
-                prediction = nimbus.predict_segmentation(
-                    input_data,
-                    preprocess_kwargs={
-                        "normalize": True, "marker": channel_name,
-                        "normalization_dict": dataset.normalization_dict,
-                        "clip_values": dataset.clip_values
-                    },
-                )
+                prediction = nimbus.predict_segmentation(input_data)
             if not isinstance(prediction, np.ndarray):
                 prediction = prediction.cpu().numpy()
             prediction = np.squeeze(prediction)
@@ -523,34 +530,6 @@ def predict_fovs(
         fov_dict_list.append(df_fov)
     cell_table = pd.concat(fov_dict_list, ignore_index=True)
     return cell_table
-
-
-def nimbus_preprocess(image, **kwargs):
-    """Preprocess input data for Nimbus model.
-
-    Args:
-        image: array to be processed
-    Returns:
-        np.array: processed image array
-    """
-    output = np.copy(image.astype(np.float32))
-    if len(image.shape) != 4:
-        raise ValueError("Image data must be 4D, got image of shape {}".format(image.shape))
-
-    normalize = kwargs.get('normalize', True)
-    if normalize:
-        marker = kwargs.get('marker', None)
-        normalization_dict = kwargs.get('normalization_dict', {})
-        if marker in normalization_dict.keys():
-            norm_factor = normalization_dict[marker]
-        else:
-            print("Norm_factor not found for marker {}, calculating directly from the image. \
-            ".format(marker))
-            norm_factor = np.quantile(output[..., 0], 0.999)
-        # normalize only marker channel in chan 0 not binary mask in chan 1
-        output[..., 0] /= norm_factor
-        output = output.clip(0, 1)
-    return output
 
 
 def calculate_normalization(dataset: MultiplexDataset, quantile: float):
@@ -667,12 +646,8 @@ def prepare_training_data(
                 instance_mask = dataset.get_segmentation(fov)
                 for channel_name in dataset.channels:
                     # load data
-                    mplex_img = dataset.get_channel(fov, channel_name)
+                    mplex_img = dataset.get_channel_normalized(fov, channel_name)
                     input_data = prepare_input_data(mplex_img, instance_mask)
-                    input_data = nimbus_preprocess(
-                        input_data, normalize=True, marker=channel_name,
-                        normalization_dict=dataset.normalization_dict
-                    )
                     groundtruth = dataset.get_groundtruth(fov, channel_name)
                     # resize data if necessary
                     if dataset.magnification != nimbus.model_magnification:

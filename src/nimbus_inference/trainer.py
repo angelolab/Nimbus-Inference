@@ -68,6 +68,11 @@ class AugmentationPipeline:
 
 
 class SmoothBinaryCELoss(torch.nn.Module):
+    """Smooth binary cross entropy loss with label smoothing.
+
+    Args:
+        label_smoothing (float): Label smoothing factor.
+    """
     def __init__(self, label_smoothing=0.05):
         super(SmoothBinaryCELoss, self).__init__()
         if not 0 <= label_smoothing < 1:
@@ -75,12 +80,22 @@ class SmoothBinaryCELoss(torch.nn.Module):
         self.label_smoothing = label_smoothing
         self.eps = 1e-12  # For numerical stability
 
-    def forward(self, inputs, targets):        
+    def forward(self, inputs, targets):   
+        """ Compute binary cross entropy loss with label smoothing.
+
+        Args:
+            inputs (torch.Tensor): Model predictions.
+            targets (torch.Tensor): Target labels 0: negative, 1: positive, 2: ignore.
+
+        Returns:
+            torch.Tensor: Binary cross entropy loss.
+        """     
         # Clamp for numerical stability
         inputs = torch.clamp(inputs, self.eps, 1.0 - self.eps)
         # get mask which is not (targets == 0 and targets == 1)
         mask = torch.clip(targets, 0, 2) == 2
         # Apply label smoothing
+        targets = torch.clip(targets, 0, 1)
         targets = targets * (1 - self.label_smoothing) + 0.5 * self.label_smoothing
         # Binary cross entropy
         loss = torch.nn.functional.binary_cross_entropy(inputs, targets, reduction='none')
@@ -119,7 +134,7 @@ class Trainer:
         self.validation_dataset = validation_dataset
         self.batch_size = batch_size
         self.model = nimbus.model
-        self.device = self.model.device
+        self.device = nimbus.device
         self.initial_regularization = initial_regularization
         if self.initial_regularization:
             self.initial_checkpoint = deepcopy(self.model)
@@ -159,7 +174,8 @@ class Trainer:
         self.model.eval()
         loss_ = []
         df_list = []
-        for inputs, labels, inst_mask, key in self.validation_loader:
+        print("Running validation...")
+        for inputs, labels, inst_mask, key in tqdm(self.validation_loader):
             inputs = inputs.to(self.device)
             labels = labels.to(self.device)
             with torch.no_grad():
@@ -169,6 +185,8 @@ class Trainer:
             # calculate mean per instance prediction
             outputs = outputs.cpu().numpy()
             inst_mask = inst_mask.cpu().numpy()
+            binary_mask = inputs[:,1,...].unsqueeze(1).cpu().numpy()
+            inst_mask = inst_mask * binary_mask
             labels = labels.cpu().numpy()
             # split batch to get individual samples
             for i in range(outputs.shape[0]):
@@ -186,37 +204,32 @@ class Trainer:
                 merged_df = pd.merge(gt_df, pred_df, on=["fov", "channel", "label"], how="inner")
                 df_list.append(merged_df)
         df = pd.concat(df_list)
-        metrics = {}    
-        # Calculate metrics per channel
-        for channel in df['channel'].unique():
-            channel_df = df[df['channel'] == channel]
-            
-            # Convert to binary predictions using 0.5 threshold
-            y_true = (channel_df['gt'] > 0.5).astype(int)
-            y_pred = (channel_df['pred'] > 0.5).astype(int)
-            
-            # Calculate basic counts
-            tp = ((y_true == 1) & (y_pred == 1)).sum()
-            fp = ((y_true == 0) & (y_pred == 1)).sum()
-            tn = ((y_true == 0) & (y_pred == 0)).sum()
-            fn = ((y_true == 1) & (y_pred == 0)).sum()
-            
-            # Calculate metrics
-            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-            specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
-            f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-            
-            metrics[channel] = {
-                'precision': precision,
-                'recall': recall, 
-                'specificity': specificity,
-                'f1': f1
-            }
+        df["gt"] = df["gt"].round(0).astype(int)
+        metrics = {}
+        # mask out ambigious cells
+        df = df[df["gt"] != 2]
+        # Calculate metrics
+        y_true = (df['gt'] > 0.5).astype(int)
+        y_pred = (df['pred'] > 0.5).astype(int)
+        tp = ((y_true == 1) & (y_pred == 1)).sum()
+        fp = ((y_true == 0) & (y_pred == 1)).sum()
+        tn = ((y_true == 0) & (y_pred == 0)).sum()
+        fn = ((y_true == 1) & (y_pred == 0)).sum()
         
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        
+        metrics = {
+            'precision': precision,
+            'recall': recall, 
+            'specificity': specificity,
+            'mean_f1': f1
+        }
+
         # Add mean loss
         metrics['loss'] = np.mean(loss_)
-        metrics['mean_f1'] = np.mean([m['f1'] for m in metrics.values() if isinstance(m, dict)])
         return metrics
     
     def initial_checkpoint_regularizer(self):
@@ -233,19 +246,14 @@ class Trainer:
 
     def save_checkpoint(self):
         """Save the model checkpoint to a file."""
-                # Set up paths
+        # Set up paths
+        print("Saving checkpoint...")
         path = os.path.dirname(nimbus_inference.__file__)
         path = Path(path).resolve()
         local_dir = os.path.join(path, "assets")
         os.makedirs(local_dir, exist_ok=True)
-        self.checkpoint_path = os.path.join(local_dir, self.checkpoint_name + ".pt")
-        torch.save({
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict(),
-            'best_f1': self.best_f1,
-            'history': self.history
-        }, self.checkpoint_path)
+        self.checkpoint_path = os.path.join(local_dir, self.checkpoint_name)
+        torch.save(self.model.state_dict(), self.checkpoint_path)
 
     def train(self, epochs: int):
         """Train the model for specified number of epochs.
@@ -253,28 +261,27 @@ class Trainer:
         Args:
             epochs (int): Number of epochs to train the model.
         """
+        print(f"Found device: {self.device}")
+        val_metrics = self.run_validation()
+        self._print_epoch_summary(epoch=0, train_losses=[], val_metrics=val_metrics)
+
         for epoch in range(epochs):
             # Training phase
             self.model.train()
             train_losses = []
             
             for inputs, labels, inst_mask, key in tqdm(self.train_loader):
+                self.optimizer.zero_grad()
+                inputs, inst_mask, labels = self.augmenter(inputs, inst_mask, labels)
                 inputs = inputs.to(self.device)
                 labels = labels.to(self.device)
-                inputs, inst_mask, labels = self.augmenter(inputs, inst_mask, labels)
-                self.optimizer.zero_grad()
+                inst_mask = inst_mask.to(self.device)
                 outputs = self.model(inputs)
                 loss = self.loss_function(outputs, labels)
+                loss = loss.mean()
                 if self.initial_regularization:
                     loss += self.initial_checkpoint_regularizer()
                 loss.backward()
-                
-                # Gradient clipping
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), 
-                    self.gradient_clip
-                )
-                
                 self.optimizer.step()
                 train_losses.append(loss.item())
             

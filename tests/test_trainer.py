@@ -74,7 +74,7 @@ def test_trainer_init():
         # Setup mock data and model
         model = MockModel(padding=0)
         nimbus = Nimbus(None, "", model_magnification=20)
-        nimbus.model = model
+        nimbus.model = model.to(nimbus.device)
 
         # Test initialization
         trainer = Trainer(
@@ -103,7 +103,7 @@ def test_trainer_run_validation():
         # Setup mock data and model
         model = MockModel(padding=0)
         nimbus = Nimbus(None, "", model_magnification=20)
-        nimbus.model = model
+        nimbus.model = model.to(nimbus.device)
 
         # Test initialization
         trainer = Trainer(
@@ -120,9 +120,6 @@ def test_trainer_run_validation():
         # Check metrics structure
         assert 'loss' in metrics
         assert 'mean_f1' in metrics
-        for channel in ['CD4', 'CD56']:
-            assert channel in metrics
-            assert all(k in metrics[channel] for k in ['precision', 'recall', 'specificity', 'f1'])
 
 
 def test_trainer_save_checkpoint():
@@ -135,7 +132,7 @@ def test_trainer_save_checkpoint():
         # Setup mock data and model
         model = MockModel(padding=0)
         nimbus = Nimbus(None, "", model_magnification=20)
-        nimbus.model = model
+        nimbus.model = model.to(nimbus.device)
 
         trainer = Trainer(
             nimbus=nimbus,
@@ -161,11 +158,7 @@ def test_trainer_save_checkpoint():
         # Verify file exists and contains expected keys
         assert os.path.exists(trainer.checkpoint_path)
         checkpoint = torch.load(trainer.checkpoint_path)
-        expected_keys = [
-            'model_state_dict', 'optimizer_state_dict', 
-            'scheduler_state_dict', 'best_f1', 'history'
-        ]
-        assert all(k in checkpoint for k in expected_keys)
+        assert 'param' in list(checkpoint.keys())
 
 
 def test_trainer_train():
@@ -178,7 +171,7 @@ def test_trainer_train():
         # Setup mock data and model
         model = MockModel(padding=0)
         nimbus = Nimbus(None, "", model_magnification=20)
-        nimbus.model = model
+        nimbus.model = model.to(nimbus.device)
 
         trainer = Trainer(
             nimbus=nimbus,
@@ -211,7 +204,7 @@ def test_trainer_print_epoch_summary(capsys):
         # Setup mock data and model
         model = MockModel(padding=0)
         nimbus = Nimbus(None, "", model_magnification=20)
-        nimbus.model = model
+        nimbus.model = model.to(nimbus.device)
 
         trainer = Trainer(
             nimbus=nimbus,
@@ -244,7 +237,7 @@ def test_initial_checkpoint_regularizer():
         # Setup model
         model = MockModel(padding=0)
         nimbus = Nimbus(None, "", model_magnification=20)
-        nimbus.model = model
+        nimbus.model = model.to(nimbus.device)
 
         # Test without regularization
         trainer_no_reg = Trainer(

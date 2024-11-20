@@ -2,7 +2,7 @@ from alpineer import io_utils, misc_utils
 from skimage.util.shape import view_as_windows
 import nimbus_inference
 from nimbus_inference.utils import (prepare_normalization_dict,
-    predict_fovs, nimbus_preprocess, MultiplexDataset
+    predict_fovs, MultiplexDataset
 )
 from huggingface_hub import hf_hub_download, list_repo_files
 import re
@@ -16,47 +16,6 @@ import torch
 import json
 import os
 import re
-
-
-def nimbus_preprocess(image, **kwargs):
-    """Preprocess input data for Nimbus model.
-
-    Args:
-        image (np.array): array to be processed
-        **kwargs: keyword arguments for preprocessing:
-            {normalize (bool): whether to normalize the image,
-            marker (str): name of marker,
-            normalization_dict (dict): normalization dictionary,
-            clip_values (tuple): min/max values to clip the image to after normalization}
-    Returns:
-        np.array: processed image array
-    """
-    output = np.copy(image)
-    if len(image.shape) != 4:
-        raise ValueError("Image data must be 4D, got image of shape {}".format(image.shape))
-
-    normalize = kwargs.get("normalize", True)
-    if normalize:
-        marker = kwargs.get("marker", None)
-        if re.search(".tif|.tiff|.png|.jpg|.jpeg", marker, re.IGNORECASE):
-            marker = marker.split(".")[0]
-        normalization_dict = kwargs.get("normalization_dict", {})
-        if marker in normalization_dict.keys():
-            norm_factor = normalization_dict[marker]
-        else:
-            print(
-                "Norm_factor not found for marker {}, calculating directly from the image. \
-            ".format(
-                    marker
-                )
-            )
-            norm_factor = np.quantile(output[:,0,...], 0.999)
-        # normalize only marker channel in chan 0 not binary mask in chan 1
-        output[:,0,...] /= norm_factor
-    clip_values = kwargs.get("clip_values", False)
-    if clip_values:
-        output[:,0,...] = np.clip(output[:,0,...], clip_values[0], clip_values[1])
-    return output
 
 
 def prep_naming_convention(deepcell_output_dir):
@@ -128,6 +87,7 @@ class Nimbus(nn.Module):
         else:
             misc_utils.verify_in_list(device=[device], valid_devices=["cpu", "cuda", "mps"])
             self.device = torch.device(device)
+        self.load_checkpoint(padding="reflect")
 
     def check_inputs(self):
         """check inputs for Nimbus model"""
@@ -149,8 +109,8 @@ class Nimbus(nn.Module):
         path = Path(path).resolve()
         local_dir = os.path.join(path, "assets")
         os.makedirs(local_dir, exist_ok=True)
-        version_pattern = re.compile(r'V(\d+)\.pt')
-        local_checkpoints = [f for f in os.listdir(local_dir) if version_pattern.search(f)]
+        pattern = re.compile(r'.*\.pt$')
+        local_checkpoints = [f for f in os.listdir(local_dir) if pattern.search(f)]
         return local_checkpoints
     
     def load_local_checkpoint(self, checkpoint, padding="reflect"):
@@ -164,8 +124,8 @@ class Nimbus(nn.Module):
         path = Path(path).resolve()
         local_dir = os.path.join(path, "assets")
         os.makedirs(local_dir, exist_ok=True)
-        version_pattern = re.compile(r'V(\d+)\.pt')
-        local_checkpoints = [f for f in os.listdir(local_dir) if version_pattern.search(f)]
+        pattern = re.compile(r'.*\.pt$')
+        local_checkpoints = [f for f in os.listdir(local_dir) if pattern.search(f)]
         if checkpoint not in local_checkpoints:
             raise ValueError(
                 f"Checkpoint {checkpoint} not found in local checkpoints {local_checkpoints}"
@@ -275,17 +235,16 @@ class Nimbus(nn.Module):
         self.cell_table.to_csv(os.path.join(self.output_dir, "nimbus_cell_table.csv"), index=False)
         return self.cell_table
 
-    def predict_segmentation(self, input_data, preprocess_kwargs):
+    def predict_segmentation(self, input_data):
         """Predicts segmentation for input data.
 
         Args:
-            input_data (np.array): Input data to predict segmentation for.
+            input_data (np.array): Normalized and clipped input data to predict segmentation for.
             preprocess_kwargs (dict): Keyword arguments for preprocessing.
             batch_size (int): Batch size for prediction.
         Returns:
             np.array: Predicted segmentation.
         """
-        input_data = nimbus_preprocess(input_data, **preprocess_kwargs)
         if np.all(np.greater_equal(self.input_shape, input_data.shape[-2:])):
             if not hasattr(self, "model") or self.model.padding != "reflect":
                 self.load_checkpoint(padding="reflect")

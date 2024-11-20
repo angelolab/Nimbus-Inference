@@ -253,7 +253,7 @@ def test_tt_aug():
         mplex_img = io.imread(os.path.join(fov_paths[0], channel+".tiff"))
         instance_mask = io.imread(inst_paths[0])
         input_data = prepare_input_data(mplex_img, instance_mask)
-        nimbus.model = MockModel(padding="reflect")
+        nimbus.model = MockModel(padding="reflect").to(nimbus.device)
         pred_map = tt_aug(
             input_data, channel, nimbus, dataset.normalization_dict, rotate=True, flip=True,
             batch_size=32
@@ -269,13 +269,7 @@ def test_tt_aug():
             input_data, channel, nimbus, dataset.normalization_dict, rotate=True, flip=False,
             batch_size=32
         )
-        pred_map_no_tt_aug = nimbus.predict_segmentation(
-            input_data,
-            preprocess_kwargs={
-                "normalize": True,
-                "marker": channel,
-                "normalization_dict": dataset.normalization_dict},
-        )
+        pred_map_no_tt_aug = nimbus.predict_segmentation(input_data)
         # check if we get roughly the same results for non augmented and augmented predictions
         assert np.allclose(pred_map, pred_map_no_tt_aug, atol=0.05)
         assert np.allclose(pred_map_2, pred_map_no_tt_aug, atol=0.05)
