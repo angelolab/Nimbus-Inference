@@ -38,6 +38,8 @@ dependencies = [
     "natsort",
     "ipython",
     "zarr",
+    "lmdb",
+    "kornia",
 ]
 
 [[project.source]]
