@@ -140,7 +140,7 @@ class CellAnalyzer(object):
         if self.segmentation_naming_convention and add_boundaries:
             fov_path = os.path.split(list(path_dict.values())[0])[0]
             seg_path = self.segmentation_naming_convention(fov_path)
-            seg_img = io.imread(seg_path)
+            seg_img = np.squeeze(io.imread(seg_path))
             seg_boundaries = find_boundaries(seg_img, mode='inner')
             individual_cell_boundary = seg_boundaries.copy()
             cell_mask = seg_img == self.cell_df[
@@ -166,7 +166,7 @@ class CellAnalyzer(object):
         # add overlay of instances
         fov_path = os.path.split(list(path_dict.values())[0])[0]
         seg_path = self.segmentation_naming_convention(fov_path)
-        seg_img = io.imread(seg_path)
+        seg_img = np.squeeze(io.imread(seg_path))
         seg_boundaries = find_boundaries(seg_img, mode='inner')
         seg_img[seg_boundaries] = 0
         seg_img_clipped = np.clip(seg_img, 0, 1) * 0.2
