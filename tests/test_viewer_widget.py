@@ -1,7 +1,10 @@
+from nimbus_inference.viewer_widget import InteractiveImageDuo, NimbusInteractiveGTViewer
 from nimbus_inference.viewer_widget import NimbusViewer
 from nimbus_inference.nimbus import Nimbus, prep_naming_convention
 from nimbus_inference.utils import MultiplexDataset
 from tests.test_utils import prepare_ome_tif_data, prepare_tif_data
+from natsort import natsorted
+from copy import copy
 import numpy as np
 import tempfile
 import os
@@ -73,3 +76,22 @@ def test_overlay():
         assert composite_image.shape == (256, 256, 3)
         assert seg_boundaries.shape == (256, 256)
         assert np.unique(seg_boundaries).tolist() == [0, 1]
+
+
+def test_InteractiveImageDuo():
+    image_duo = InteractiveImageDuo(
+        figsize=(10, 5), title_left='Left Image', title_right='Right Image'
+    )
+    assert isinstance(image_duo, InteractiveImageDuo)
+
+    # Create dummy images
+    left_image = np.random.randint(0, 255, (256, 256), dtype=np.uint8)
+    right_image = np.random.randint(0, 255, (256, 256), dtype=np.uint8)
+
+    # Update images
+    image_duo.update_left_image(left_image)
+    image_duo.update_right_image(right_image)
+
+    # Check if images are updated
+    assert image_duo.ax[0].images[0].get_array().shape == (256, 256)
+    assert image_duo.ax[1].images[0].get_array().shape == (256, 256)

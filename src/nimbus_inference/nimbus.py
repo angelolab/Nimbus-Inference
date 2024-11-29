@@ -36,9 +36,18 @@ def prep_naming_convention(deepcell_output_dir):
         Returns:
             str: paths to segmentation fovs
         """
-        fov_name = os.path.basename(fov_path).replace(".ome.tiff", "")
-        return os.path.join(deepcell_output_dir, fov_name + "_whole_cell.tiff")
-
+        fov_name = os.path.basename(fov_path)
+        # remove suffix
+        fov_name = Path(fov_name).stem
+        # find all fnames which contain a superset of the fov_name
+        fnames = os.listdir(deepcell_output_dir)
+        # use re instead of glob
+        fnames = [os.path.join(deepcell_output_dir, f) for f in fnames if fov_name in f]
+        if len(fnames) == 0:
+            raise ValueError(f"No segmentation data found for fov {fov_name}")
+        if len(fnames) > 1:
+            raise ValueError(f"Multiple segmentation data found for fov {fov_name}")
+        return fnames[0]
     return segmentation_naming_convention
 
 

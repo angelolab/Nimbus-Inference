@@ -718,3 +718,58 @@ class LmdbDataset(torch.utils.data.Dataset):
             groundtruth = sample[2:3]
             inst_mask = sample[3:]
             return input_data, groundtruth, inst_mask, self.keys[idx]
+
+
+class InteractiveDataset(object):
+    """Dataset for the InteractiveViewer class. This dataset class stores multiple objects of type
+    MultiplexedDataset, and allows to select a dataset and use its method for reading fovs and
+    channels from it.
+
+    Args:
+        datasets (dict): dictionary with dataset names as keys and dataset objects as values
+    """
+    def __init__(self, datasets: dict):
+        self.datasets = datasets
+        self.dataset_names = list(datasets.keys())
+        self.dataset = None
+
+    def set_dataset(self, dataset_name: str):
+        """Set the active dataset
+
+        Args:
+            dataset_name (str): name of the dataset
+        """
+        self.dataset = self.datasets[dataset_name]
+        return self.dataset
+
+    def get_channel(self, fov: str, channel: str):
+        """Get a channel from a fov
+
+        Args:
+            fov (str): name of a fov
+            channel (str): channel name
+        Returns:
+            np.array: channel image
+        """
+        return self.dataset.get_channel(fov, channel)
+
+    def get_segmentation(self, fov: str):
+        """Get the instance mask for a fov
+
+        Args:
+            fov (str): name of a fov
+        Returns:
+            np.array: instance mask
+        """
+        return self.dataset.get_segmentation(fov)
+
+    def get_groundtruth(self, fov: str, channel: str):
+        """Get the groundtruth for a fov / channel combination
+
+        Args:
+            fov (str): name of a fov
+            channel (str): channel name
+        Returns:
+            np.array: groundtruth activity mask (0: negative, 1: positive, 2: ambiguous)
+        """
+        return self.dataset.get_groundtruth(fov, channel)

@@ -5,6 +5,9 @@ import warnings
 from typing import Union
 import datasets
 from alpineer.misc_utils import verify_in_list
+import zipfile
+import os
+import requests
 
 EXAMPLE_DATASET_REVISION: str = "main"
 
@@ -215,3 +218,47 @@ def get_example_dataset(dataset: str, save_dir: Union[str, pathlib.Path],
 
     # Move the dataset over to the save_dir from the user.
     example_dataset.move_example_dataset(move_dir=save_dir)
+
+
+def download_and_unpack_gold_standard(save_dir: Union[str, pathlib.Path], overwrite_existing: bool = True):
+    """
+    Downloads 'gold_standard_labelled.zip' from the Hugging Face dataset and unpacks it in the given folder
+    if the dataset is not already present there.
+
+    Args:
+        save_dir (Union[str, Path]): The path to save the dataset files in.
+        overwrite_existing (bool): The option to overwrite existing files. Defaults to True.
+    """
+    url = "https://huggingface.co/datasets/JLrumberger/Pan-Multiplex-Gold-Standard/resolve/main/gold_standard_labelled.zip"
+    save_dir = pathlib.Path(save_dir)
+    zip_path = save_dir / "gold_standard_labelled.zip"
+
+    # Create the save directory if it doesn't exist
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    # Check if the dataset is already present
+    if zip_path.exists() and not overwrite_existing:
+        print(f"{zip_path} already exists. Skipping download.")
+        return
+
+    # Download the zip file
+    print(f"Downloading {url} to {zip_path}...")
+    response = requests.get(url, stream=True)
+    response.raise_for_status()
+
+    with open(zip_path, "wb") as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+
+    print(f"Downloaded {zip_path}")
+
+    # Unpack the zip file
+    print(f"Unpacking {zip_path}...")
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        zip_ref.extractall(save_dir)
+
+    print(f"Unpacked to {save_dir}")
+
+    # Optionally, remove the zip file after unpacking
+    os.remove(zip_path)
+    print(f"Removed {zip_path}")
