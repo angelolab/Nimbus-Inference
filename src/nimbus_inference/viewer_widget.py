@@ -8,7 +8,7 @@ import numpy as np
 from natsort import natsorted
 from skimage.segmentation import find_boundaries
 from skimage.transform import rescale
-from nimbus_inference.utils import MultiplexDataset
+from nimbus_inference.utils import MultiplexDataset, InteractiveDataset
 from mpl_interactions import panhandler
 import matplotlib.pyplot as plt
 
@@ -289,7 +289,7 @@ class InteractiveImageDuo(widgets.Image):
         title_left (str): Title of left image.
         title_right (str): Title of right image.
     """
-    def __init__(self, figsize=(10, 5), title_left='Multiplexed image', title_right='Prediction'):
+    def __init__(self, figsize=(10, 5), title_left='Multiplexed image', title_right='Groundtruth'):
         super().__init__()
         self.title_left = title_left
         self.title_right = title_right
@@ -359,30 +359,37 @@ class InteractiveImageDuo(widgets.Image):
         Args:
             image (np.array): Image to display.
         """
-        self.ax[1].imshow(image)
+        self.ax[1].imshow(image, vmin=0, vmax=255)
         self.ax[1].title.set_text(self.title_right)
         self.ax[1].set_xticks([])
         self.ax[1].set_yticks([])
         self.fig.canvas.draw_idle()
 
 
-class NimbusInteractiveViewer(NimbusViewer):
-    """Interactive viewer for Nimbus application.
+class NimbusInteractiveGTViewer(NimbusViewer):
+    """Interactive viewer for Nimbus application that shows input data and ground truth
+    side by side.
 
     Args:
         dataset (MultiplexDataset): dataset object
         output_dir (str): Path to directory containing output of Nimbus application.
-        segmentation_naming_convention (fn): Function that maps input path to segmentation path
-        img_width (str): Width of images in viewer.
-        suffix (str): Suffix of images in dataset.
-        max_resolution (tuple): Maximum resolution of images in viewer.
+        figsize (tuple): Size of figure.
     """
     def __init__(
-            self, dataset: MultiplexDataset, output_dir: str, img_width='600px', suffix=".tiff",
-            max_resolution=(2048, 2048)
+            self, datasets: InteractiveDataset, output_dir, figsize=(20, 10)
         ):
-        super().__init__(dataset, output_dir, img_width, suffix, max_resolution)
-        self.image = InteractiveImageDuo()
+        super().__init__(
+            datasets.datasets[datasets.dataset_names[0]], output_dir
+        )
+        self.image = InteractiveImageDuo(figsize=figsize)
+        self.dataset = datasets.datasets[datasets.dataset_names[0]]
+        self.datasets = datasets
+        self.dataset_select = widgets.Select(
+            options=datasets.dataset_names,
+            description='Dataset:',
+            disabled=False
+        )
+        self.dataset_select.observe(self.select_dataset, names='value')
 
     def layout(self):
         """Creates layout for viewer."""
@@ -392,14 +399,27 @@ class NimbusInteractiveViewer(NimbusViewer):
             self.blue_select
         ])
         layout = widgets.HBox([
-            widgets.HBox([
+            # widgets.HBox([
+                self.dataset_select,
                 self.fov_select,
                 channel_selectors,
                 self.overlay_checkbox,
                 self.update_button
-            ]),
+            # ]),
         ])
         display(layout)
+
+    def select_dataset(self, change):
+        """Selects dataset to display.
+
+        Args:
+            change (dict): Change dictionary from ipywidgets.
+        """
+        self.dataset = self.datasets.set_dataset(change['new'])
+        self.fov_names = natsorted(copy(self.dataset.fovs))
+        self.fov_select.options = self.fov_names
+        self.select_fov(None)
+
 
     def update_img(self, image_fn, composite_image):
         """Updates image in viewer by saving it as png and loading it with the viewer widget.
@@ -444,10 +464,6 @@ class NimbusInteractiveViewer(NimbusViewer):
         non_none = [p for p in path_dict.values() if p]
         if not non_none:
             return
-        composite_image = self.create_composite_image(path_dict)
-        composite_image, _ = self.overlay(
-            composite_image, add_overlay=True
-        )
 
         in_composite_image = self.create_composite_from_dataset(in_path_dict)
         in_composite_image, seg_boundaries = self.overlay(
@@ -459,6 +475,27 @@ class NimbusInteractiveViewer(NimbusViewer):
         in_composite_image = np.clip(in_composite_image*255, 0, 255).astype(np.uint8)
         if seg_boundaries is not None:
             in_composite_image[seg_boundaries] = [127, 127, 127]
+
+        img = in_composite_image[...,0].astype(np.float32) * 0
+        right_images = []
+        for c, s in {'red': self.red_select.value,
+                     'green': self.green_select.value,
+                     'blue': self.blue_select.value}.items():
+            if s:
+                composite_image = self.dataset.get_groundtruth(
+                    self.fov_select.value, s
+                )
+            else:
+                composite_image = img
+            composite_image = np.squeeze(composite_image).astype(np.float32)
+            right_images.append(composite_image)
+        right_images = np.stack(right_images, axis=-1)
+        right_images = np.clip(right_images, 0, 2)
+        right_images[right_images == 2] = 0.3
+        right_images[seg_boundaries] = 0.0
+        right_images *= 255.0
+        right_images = right_images.astype(np.uint8)
+
         # update image viewers
         self.update_img(self.image.update_left_image, in_composite_image)
-        self.update_img(self.image.update_right_image, composite_image)
+        self.update_img(self.image.update_right_image, right_images)
