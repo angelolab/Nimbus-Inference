@@ -395,10 +395,10 @@ def test_MultiplexDataset():
         fov_0_seg_ = dataset_ome.get_segmentation(fov="fov_0")
         assert np.alltrue(fov_0_seg == fov_0_seg_)
         
-        # test everything again with single channel    
+        # test everything again with single channel and float dtypes
         fov_paths, _ = prepare_tif_data(
             num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"],
-            shape=(512, 256)
+            shape=(512, 256), image_dtype=np.float32, instance_dtype=np.float32
         )
         cd4_channel = io.imread(os.path.join(fov_paths[0], "CD4.tiff"))
         fov_0_seg = io.imread(segmentation_naming_convention(fov_paths[0]))
@@ -428,6 +428,26 @@ def test_MultiplexDataset():
                 (groundtruth_df["fov"] == "fov_0") & (groundtruth_df["channel"] == "CD4")
             ]
             assert np.alltrue(df == subset_df)
+        
+        # test everything again with single channel and uint16 dtypes
+        fov_paths, _ = prepare_tif_data(
+            num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"],
+            shape=(512, 256), image_dtype=np.uint16, instance_dtype=np.uint16
+        )
+        cd4_channel = io.imread(os.path.join(fov_paths[0], "CD4.tiff"))
+        fov_0_seg = io.imread(segmentation_naming_convention(fov_paths[0]))
+        dataset = MultiplexDataset(
+            fov_paths, segmentation_naming_convention, suffix=".tiff",
+            groundtruth_df=groundtruth_df, output_dir=temp_dir
+        )
+        assert len(dataset) == 1
+        assert set(dataset.channels) == set(["CD4", "CD56"])
+        assert dataset.fov_paths == fov_paths
+        assert dataset.multi_channel == False
+        cd4_channel_ = dataset.get_channel(fov="fov_0", channel="CD4")
+        assert np.alltrue(cd4_channel == cd4_channel_)
+        fov_0_seg_ = dataset.get_segmentation(fov="fov_0")
+        assert np.alltrue(fov_0_seg == fov_0_seg_)            
 
 
 def test_prepare_normalization_dict():

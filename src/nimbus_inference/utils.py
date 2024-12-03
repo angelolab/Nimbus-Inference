@@ -298,6 +298,7 @@ class MultiplexDataset():
             print("No normalization dict found. Preparing normalization dict...")
             self.prepare_normalization_dict()
         mplex_img = self.get_channel(fov, channel)
+        mplex_img = mplex_img.astype(np.float32)
         if channel in self.normalization_dict.keys():
             norm_factor = self.normalization_dict[channel]
         else:
