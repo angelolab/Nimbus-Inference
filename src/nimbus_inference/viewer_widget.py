@@ -347,7 +347,7 @@ class InteractiveImageDuo(widgets.Image):
         Args:
             image (np.array): Image to display.
         """
-        self.ax[0].imshow(image)
+        self.ax[0].imshow(image, cmap='gray', vmin=0, vmax=255)
         self.ax[0].title.set_text(self.title_left)
         self.ax[0].set_xticks([])
         self.ax[0].set_yticks([])
@@ -359,7 +359,7 @@ class InteractiveImageDuo(widgets.Image):
         Args:
             image (np.array): Image to display.
         """
-        self.ax[1].imshow(image, vmin=0, vmax=255)
+        self.ax[1].imshow(image, cmap='gray', vmin=0, vmax=255)
         self.ax[1].title.set_text(self.title_right)
         self.ax[1].set_xticks([])
         self.ax[1].set_yticks([])
@@ -391,21 +391,37 @@ class NimbusInteractiveGTViewer(NimbusViewer):
         )
         self.dataset_select.observe(self.select_dataset, names='value')
 
+        # Replace three channel selectors with a single one
+        self.channel_select = widgets.Select(
+            options=natsorted(copy(self.dataset.channels)),
+            description='Channel:',
+            disabled=False
+        )
+
+        # Add intensity sliders
+        self.min_intensity_slider = widgets.FloatSlider(
+            value=0.0, min=0.0, max=255.0, step=1., description="Min Intensity"
+        )
+        self.max_intensity_slider = widgets.FloatSlider(
+            value=255.0, min=0.0, max=255.0, step=1., description="Max Intensity"
+        )
+        self.min_intensity_slider.observe(self.update_intensity, names='value')
+        self.max_intensity_slider.observe(self.update_intensity, names='value')
+
     def layout(self):
         """Creates layout for viewer."""
-        channel_selectors = widgets.HBox([
-            self.red_select,
-            self.green_select,
-            self.blue_select
+        sliders = widgets.VBox([
+            self.min_intensity_slider,
+            self.max_intensity_slider
         ])
         layout = widgets.HBox([
-            # widgets.HBox([
-                self.dataset_select,
-                self.fov_select,
-                channel_selectors,
-                self.overlay_checkbox,
-                self.update_button
-            # ]),
+            # Widgets layout
+            self.dataset_select,
+            self.fov_select,
+            self.channel_select,
+            sliders,
+            self.overlay_checkbox,
+            self.update_button
         ])
         display(layout)
 
@@ -418,84 +434,51 @@ class NimbusInteractiveGTViewer(NimbusViewer):
         self.dataset = self.datasets.set_dataset(change['new'])
         self.fov_names = natsorted(copy(self.dataset.fovs))
         self.fov_select.options = self.fov_names
+        self.channel_select.options = natsorted(copy(self.dataset.channels))
         self.select_fov(None)
 
-
-    def update_img(self, image_fn, composite_image):
-        """Updates image in viewer by saving it as png and loading it with the viewer widget.
-
-        Args:
-            ax (matplotlib ax): ax to update.
-            composite_image (np.array): Composite image to display.
-        """
-        if composite_image.shape[0] > self.max_resolution[0] or composite_image.shape[1] > self.max_resolution[1]:
-            scale = float(np.max(self.max_resolution)/np.max(composite_image.shape))
-            composite_image = rescale(composite_image, (scale, scale, 1), preserve_range=True)
-            composite_image = composite_image.astype(np.uint8)
-        image_fn(composite_image)
+    def update_intensity(self, change=None):
+        """Update the left image intensity scaling based on the slider values."""
+        self.update_composite()
 
     def update_composite(self):
         """Updates composite image in viewer."""
-        path_dict = {
-            "red": None,
-            "green": None,
-            "blue": None
-        }
-        in_path_dict = copy(path_dict)
-        if self.red_select.value:
-            path_dict["red"] = os.path.join(
-                self.output_dir, self.fov_select.value, self.red_select.value + self.suffix
-            )
-            in_path_dict["red"] = {"fov": self.fov_select.value, "channel": self.red_select.value}
-        if self.green_select.value:
-            path_dict["green"] = os.path.join(
-                self.output_dir, self.fov_select.value, self.green_select.value + self.suffix
-            )
-            in_path_dict["green"] = {
-                "fov": self.fov_select.value, "channel": self.green_select.value
-            }
-        if self.blue_select.value:
-            path_dict["blue"] = os.path.join(
-                self.output_dir, self.fov_select.value, self.blue_select.value + self.suffix
-            )
-            in_path_dict["blue"] = {
-                "fov": self.fov_select.value, "channel": self.blue_select.value
-            }
-        non_none = [p for p in path_dict.values() if p]
-        if not non_none:
+        if not self.channel_select.value:
             return
 
-        in_composite_image = self.create_composite_from_dataset(in_path_dict)
-        in_composite_image, seg_boundaries = self.overlay(
+        # Get the selected channel and FOV
+        selected_channel = self.channel_select.value
+        selected_fov = self.fov_select.value
+
+        # Get the image for the selected channel
+        in_composite_image = self.dataset.get_channel(selected_fov, selected_channel)
+
+        # Apply intensity scaling
+        min_intensity = self.min_intensity_slider.value
+        max_intensity = self.max_intensity_slider.value
+        in_composite_image = np.clip(
+            (in_composite_image - min_intensity) / (max_intensity - min_intensity),
+            0, 1
+        )
+        in_composite_image = np.clip(in_composite_image * 255, 0, 255).astype(np.uint8)
+
+        # Overlay boundaries if enabled
+        in_composite_image = np.repeat(in_composite_image[..., np.newaxis], 3, axis=-1)
+        _, seg_boundaries = self.overlay(
             in_composite_image, add_boundaries=self.overlay_checkbox.value
         )
-        in_composite_image = in_composite_image / np.quantile(
-            in_composite_image, 0.999, axis=(0,1)
-        )
-        in_composite_image = np.clip(in_composite_image*255, 0, 255).astype(np.uint8)
+        in_composite_image = np.mean(in_composite_image, axis=-1).astype(np.uint8)
+        in_composite_image = np.squeeze(in_composite_image)
         if seg_boundaries is not None:
-            in_composite_image[seg_boundaries] = [127, 127, 127]
-
-        img = in_composite_image[...,0].astype(np.float32) * 0
-        right_images = []
-        for c, s in {'red': self.red_select.value,
-                     'green': self.green_select.value,
-                     'blue': self.blue_select.value}.items():
-            if s:
-                composite_image = self.dataset.get_groundtruth(
-                    self.fov_select.value, s
-                )
-            else:
-                composite_image = img
-            composite_image = np.squeeze(composite_image).astype(np.float32)
-            right_images.append(composite_image)
-        right_images = np.stack(right_images, axis=-1)
-        right_images = np.clip(right_images, 0, 2)
-        right_images[right_images == 2] = 0.3
-        right_images[seg_boundaries] = 0.0
-        right_images *= 255.0
-        right_images = right_images.astype(np.uint8)
-
-        # update image viewers
-        self.update_img(self.image.update_left_image, in_composite_image)
-        self.update_img(self.image.update_right_image, right_images)
+            in_composite_image[seg_boundaries] = 127
+        # Update right image viewer with a placeholder or segmentation visualization
+        right_image = self.dataset.get_groundtruth(selected_fov, selected_channel)
+        right_image = np.clip(right_image, 0, 2).astype(np.float32)
+        right_image[right_image == 2] = 0.3
+        right_image = np.squeeze(right_image)
+        right_image[seg_boundaries] = 0.0
+        right_image *= 255.0
+        right_image = right_image.astype(np.uint8)
+        # Update images
+        self.image.update_left_image(in_composite_image)
+        self.image.update_right_image(right_image)
