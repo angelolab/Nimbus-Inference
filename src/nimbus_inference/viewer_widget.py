@@ -100,8 +100,6 @@ class NimbusViewer(object):
             val = (np.max(composite_image, axis=(0,1))*0.5).astype(composite_image.dtype)
             val = np.min(val[val>0])
             composite_image[seg_boundaries] = [val]*3
-        else:
-            seg_boundaries = None
         return composite_image, seg_boundaries
 
     def create_composite_from_dataset(self, path_dict):
@@ -390,6 +388,12 @@ class NimbusInteractiveGTViewer(NimbusViewer):
             disabled=False
         )
         self.dataset_select.observe(self.select_dataset, names='value')
+        self.overlay_checkbox = widgets.Checkbox(
+            value=False,
+            description='Overlay segmentations',
+            disabled=False
+        )
+
 
     def layout(self):
         """Creates layout for viewer."""
@@ -403,7 +407,6 @@ class NimbusInteractiveGTViewer(NimbusViewer):
                 self.dataset_select,
                 self.fov_select,
                 channel_selectors,
-                self.overlay_checkbox,
                 self.update_button
             # ]),
         ])
