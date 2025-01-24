@@ -263,7 +263,7 @@ class Trainer:
         """
         print(f"Found device: {self.device}")
         val_metrics = self.run_validation()
-        self._print_epoch_summary(epoch=0, train_losses=[], val_metrics=val_metrics)
+        self._print_epoch_summary(epoch=0, train_losses=[0.0], val_metrics=val_metrics)
 
         for epoch in range(epochs):
             # Training phase
