@@ -143,11 +143,18 @@ class Trainer:
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(), lr=learning_rate, weight_decay=weight_decay
         )
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            self.optimizer,
-            T_0=5,  # First cycle length (epochs)
-            T_mult=2,  # Multiply cycle length by 2 after each restart
-            eta_min=1e-7  # Minimum learning rate
+        self.scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer=self.optimizer, 
+            schedulers=[
+                # linear warmup
+                torch.optim.lr_scheduler.LinearLR(
+                    self.optimizer, start_factor=0.1, end_factor=1.0, total_iters=100
+                ),
+                torch.optim.lr_scheduler.CosineAnnealingLR(
+                    self.optimizer, T_max=5000, eta_min=0.0001 
+                )
+            ], 
+            milestones=[100]
         )
         use_pin_memory = self.device.type == "cuda" or self.device.type == "mps"
         self.loss_function = SmoothBinaryCELoss(label_smoothing=label_smoothing)
