@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/angelolab/Nimbus-Inference/blob/main/assets/nimbus_logo.png" alt="Nimbus Logo"/>
+  <img src="https://raw.githubusercontent.com/angelolab/Nimbus-Inference/refs/heads/main/assets/nimbus_logo.png" alt="Nimbus Logo"/>
 </p>
 
 ![CI](https://github.com/angelolab/Nimbus-Inference/actions/workflows/ci.yaml/badge.svg)
