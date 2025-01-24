@@ -128,7 +128,7 @@ class Trainer:
             checkpoint_name: str, batch_size: int=4, learning_rate: float=1e-5,
             weight_decay: float=1e-4, initial_regularization: float=1e-4, num_workers: int=4,
             label_smoothing: float=0.05, gradient_clip: float=1.0, patience: int=5,
-            augmentation_p: float=0.5,
+            augmentation_p: float=0.5, warmup_steps: int=100
         ):
         self.train_dataset = train_dataset
         self.validation_dataset = validation_dataset
@@ -143,11 +143,18 @@ class Trainer:
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(), lr=learning_rate, weight_decay=weight_decay
         )
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            self.optimizer,
-            T_0=5,  # First cycle length (epochs)
-            T_mult=2,  # Multiply cycle length by 2 after each restart
-            eta_min=1e-7  # Minimum learning rate
+        self.scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer=self.optimizer, 
+            schedulers=[
+                # linear warmup
+                torch.optim.lr_scheduler.LinearLR(
+                    self.optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_steps
+                ),
+                torch.optim.lr_scheduler.CosineAnnealingLR(
+                    self.optimizer, T_max=5000, eta_min=1e-6
+                )
+            ], 
+            milestones=[warmup_steps]
         )
         use_pin_memory = self.device.type == "cuda" or self.device.type == "mps"
         self.loss_function = SmoothBinaryCELoss(label_smoothing=label_smoothing)
