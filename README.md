@@ -4,6 +4,7 @@
 
 ![CI](https://github.com/angelolab/Nimbus-Inference/actions/workflows/ci.yaml/badge.svg)
 [![Documentation Status](https://readthedocs.org/projects/nimbus-inference/badge/?version=latest)](https://nimbus-inference.readthedocs.io/en/latest/?badge=latest)
+[![PyPI Downloads](https://static.pepy.tech/badge/nimbus-inference)](https://pepy.tech/projects/nimbus-inference)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1mLt2K9_rqUhr3Z4CLw_znS12KSUVSPzj?usp=sharing)
 
 # Nimbus Inference
