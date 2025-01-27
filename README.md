@@ -13,6 +13,8 @@
 - **Finetuning** the Nimbus model on new data if desired.
 - **Interactive exploration** of the Nimbus Gold Standard dataset.
 
+The code for training the Nimbus model from scratch can be found in the [angelolab/Nimbus](https://github.com/angelolab/Nimbus) repository 
+
 > **Installation (via pip)**  
 > ```bash
 > pip install Nimbus-Inference
