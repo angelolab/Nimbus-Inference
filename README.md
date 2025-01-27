@@ -66,12 +66,6 @@ For more details, please see our [preprint](https://pmc.ncbi.nlm.nih.gov/article
 
 ---
 
-## Release Notes
-
-See our changelog for details of what has changed in recent releases.
-
----
-
 ## Contact
 
 If you have questions, find a bug, or need help:
