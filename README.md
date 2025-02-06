@@ -30,7 +30,7 @@ We provide three Jupyter notebooks (in the `templates` folder), each with its ow
 
 - **[1_Nimbus_Predict.ipynb](https://github.com/angelolab/Nimbus-Inference/blob/main/templates/1_Nimbus_Predict.ipynb)**  
    - Guides you through performing inference with the Nimbus model on multiplexed imaging data.  
-   - [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1mLt2K9_rqUhr3Z4CLw_znS12KSUVSPzj?usp=sharing)  
+   - [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://drive.google.com/file/d/1k-KnuALBRXbjbkpIP63tf7aEEALw9L1O/view?usp=sharing)  
      
 - **[2_Nimbus_Finetuning.ipynb](https://github.com/angelolab/Nimbus-Inference/blob/main/templates/2_Nimbus_Finetuning.ipynb)**  
    - Shows you how to finetune the Nimbus model on a new dataset.  
