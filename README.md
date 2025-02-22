@@ -69,6 +69,21 @@ For more details, please see our [preprint](https://pmc.ncbi.nlm.nih.gov/article
 
 ---
 
+## Repository organization
+
+Our github is organized as follows: 
+- The `README` file (which you're looking at now) provides an overview of the project
+- The `.github` folder contains code automating jobs via github actions for testing and deployment
+- The `assets` folder contains images that are displayed in the README
+- The `docs` folder allows us to build and maintain updated documentation for the project
+- The `src` folder contains the core code for running Nimbus
+- The `templates` folder contains example notebooks to provide easy starting examples for new users
+- The `tests` folder contains code for testing the codebase
+  
+For a more detailed look on how to get started, please check out our [documentation](https://nimbus-inference.readthedocs.io/en/latest/?badge=latest)
+
+---
+
 ## Contact
 
 If you have questions, find a bug, or need help:
