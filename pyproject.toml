@@ -24,7 +24,7 @@ dependencies = [
     "scikit-image",
     "tqdm",
     "opencv-python",
-    "numpy",
+    "numpy<2.0.0",
     "pandas",
     "datasets",
     "joblib",
