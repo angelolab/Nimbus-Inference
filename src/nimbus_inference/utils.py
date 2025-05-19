@@ -666,7 +666,7 @@ def prepare_training_data(
                             interpolation=0
                         )[np.newaxis, ...] # 1, h, w
                         inst_mask = cv2.resize(
-                            instance_mask.astype(np.uint8), [int(w*scale), int(h*scale)],
+                            instance_mask.astype(np.uint16), [int(w*scale), int(h*scale)],
                             interpolation=0
                         )[np.newaxis, ...]
                     # mirror pad and tile data
