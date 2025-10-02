@@ -26,7 +26,7 @@ dependencies = [
     "opencv-python-headless",
     "numpy<2.0.0",
     "pandas",
-    "datasets",
+    "datasets<4.0",
     "joblib",
     "pandas",
     "pathlib",
