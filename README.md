@@ -97,11 +97,12 @@ If you have questions, find a bug, or need help:
 If you use Nimbus in your work, please cite:
 
 ```bibtex
-@article{rum2024nimbus,
+@article{rumberger2025automated,
   title={Automated classification of cellular expression in multiplexed imaging data with Nimbus},
-  author={Rumberger, J. Lorenz and Greenwald, Noah F. and Ranek, Jolene S. and Boonrat, Potchara and Walker, Cameron and Franzen, Jannik and Varra, Sricharan Reddy and Kong, Alex and Sowers, Cameron and Liu, Candace C. and Averbukh, Inna and Piyadasa, Hadeesha and Vanguri, Rami and Nederlof, Iris and Wang, Xuefei Julie and Van Valen, David and Kok, Marleen and Hollman, Travis J. and Kainmueller, Dagmar and Angelo, Michael},
-  journal={bioRxiv},
-  pages={2024--05},
-  year={2024},
-  publisher={Cold Spring Harbor Laboratory}
+  author={Rumberger, Josef Lorenz and Greenwald, Noah F and Ranek, Jolene S and Boonrat, Potchara and Walker, Cameron and Franzen, Jannik and Varra, Sricharan Reddy and Kong, Alex and Sowers, Cameron and Liu, Candace C and others},
+  journal={Nature Methods},
+  volume={22},
+  pages={2161–-2170},
+  year={2025},
+  publisher={Nature Publishing Group US New York}
 }
