@@ -144,23 +144,37 @@ class ExampleDataset:
 
             if self.overwrite_existing:
                 if not empty_dst_path:
-                    warnings.warn(UserWarning(f"Files exist in {dst_path}. \
-                        They will be overwritten by the downloaded example dataset."))
+                    warnings.warn(
+                        f"Files exist in {dst_path}. "
+                        "They will be overwritten by the downloaded example dataset.",
+                        UserWarning,
+                        stacklevel=2
+                    )
 
-                # Remove files in the destination path
-                [f.unlink() for f in dst_path.glob("*") if f.is_file()]
+                # Remove all contents in the destination path
+                if dst_path.exists():
+                    shutil.rmtree(dst_path)
+                    dst_path.mkdir(parents=True, exist_ok=True)
                 # Fill destination path
                 shutil.copytree(src_path, dst_path, dirs_exist_ok=True,
                                 ignore=shutil.ignore_patterns(r"\.\!*"))
             else:
                 if empty_dst_path:
-                    warnings.warn(UserWarning(f"Files do not exist in {dst_path}. \
-                        The example dataset will be added in."))
+                    warnings.warn(
+                        f"Files do not exist in {dst_path}. "
+                        "The example dataset will be added in.",
+                        UserWarning,
+                        stacklevel=2
+                    )
                     shutil.copytree(src_path, dst_path, dirs_exist_ok=True,
-                                    ignore=shutil.ignore_patterns(r"\.\!*"))
+                                    ignore=shutil.ignore_patterns(r"\.\.!*"))
                 else:
-                    warnings.warn(UserWarning(f"Files exist in {dst_path}. \
-                        They will not be overwritten."))
+                    warnings.warn(
+                        f"Files exist in {dst_path}. "
+                        "They will not be overwritten.",
+                        UserWarning,
+                        stacklevel=2
+                    )
 
 
 def get_example_dataset(dataset: str, save_dir: Union[str, pathlib.Path],
