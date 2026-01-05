@@ -48,6 +48,10 @@ class LazyOMETIFFReader(OMETIFFReader):
         self.metadata = self.get_metadata()
         self.channels = self.get_channel_names()
         self.shape = self.get_shape()
+        logging.info(
+            f"LazyOMETIFFReader initialized for {os.path.basename(str(fpath))} "
+            f"with {len(self.channels)} channels: {self.channels}"
+        )
     
     def get_metadata(self):
         """Get the metadata of the OME-TIFF file
@@ -160,7 +164,7 @@ class MultiplexDataset():
             self, fov_paths: list, segmentation_naming_convention: Callable = None,
             include_channels: list = [], suffix: str = ".tiff", silent: bool = False,
             groundtruth_df: pd.DataFrame = None, magnification: int = 20,
-            validation_fovs: list = [], output_dir: str = ""
+            validation_fovs: list = [], output_dir: str = "",
         ):
         self.fov_paths = fov_paths
         self.segmentation_naming_convention = segmentation_naming_convention
@@ -169,7 +173,10 @@ class MultiplexDataset():
             self.suffix = "." + self.suffix
         self.silent = silent
         self.include_channels = include_channels
-        self.multi_channel = self.is_multi_channel_tiff(fov_paths[0])
+        
+        # Detect and validate file structure
+        self._validate_file_structure()
+        
         self.channels = self.get_channels()
         self.check_inputs()
         self.fovs = self.get_fovs()
@@ -185,6 +192,117 @@ class MultiplexDataset():
             num_validation_fovs = len(self.fovs)//10 if len(self.fovs) > 10 else 1
             self.validation_fovs = self.fovs[-num_validation_fovs:]
             self.training_fovs = self.fovs[:-num_validation_fovs]
+        if not self.silent:
+            self._print(f"Dataset initialized with\n"
+                f"FOVs: {self.fovs}.\n"
+                f"Channels: {self.channels}.")
+
+    def _print(self, message: str):
+        """Print message if not silent
+
+        Args:
+            message (str): message to print
+        """
+        if not self.silent:
+            print(message)
+
+    def _validate_file_structure(self):
+        """Detect and validate the file structure of the dataset.
+        Sets self.multi_channel and self._is_companion_ome_tiff based on detection.
+        """
+        self.multi_channel = self._is_multi_channel_tiff(self.fov_paths[0])
+        self._is_companion_ome_tiff = self._is_companion_ome_tiff_folder(self.fov_paths[0])
+
+    def _is_multi_channel_tiff(self, fov_path: str) -> bool:
+        """Check if fov_path is a multi-channel OME-TIFF file.
+
+        Args:
+            fov_path (str): path to fov (file or folder)
+        Returns:
+            bool: True if fov_path is a multi-channel OME-TIFF file
+        """
+        if not fov_path.lower().endswith(("ome.tif", "ome.tiff")):
+            return False
+        
+        self.img_reader = LazyOMETIFFReader(fov_path)
+        if len(self.img_reader.shape) > 2:
+            self._print(f"Detected multi-channel OME-TIFF file: {os.path.basename(fov_path)} ")
+            return True
+        return False
+
+    def _is_companion_ome_tiff_folder(self, fov_path: str) -> bool:
+        """Check if fov_path is a folder containing Xenium-style companion OME-TIFF files
+        where each channel file contains OME metadata referencing all channels via UUID.
+
+        Args:
+            fov_path (str): path to fov (file or folder)
+        Returns:
+            bool: True if folder contains companion OME-TIFF files
+        """
+        if self.multi_channel:
+            return False  # Already a multi-channel OME-TIFF file
+        
+        if not os.path.isdir(fov_path):
+            return False
+        
+        # Find first channel file
+        channel_files = [
+            f for f in os.listdir(fov_path) if f.endswith(self.suffix)
+        ]
+        if not channel_files:
+            return False
+        
+        sample_path = os.path.join(fov_path, channel_files[0])
+        
+        if not sample_path.lower().endswith((".ome.tif", ".ome.tiff")):
+            self._print(f"Detected standard TIFF channel files in folder: {fov_path}")
+            return False
+        
+        with tifffile.TiffFile(sample_path) as tif:
+            # Check for companion OME-TIFF by looking for UUID FileName references
+            if tif.is_ome and tif.ome_metadata and '<UUID FileName=' in tif.ome_metadata:
+                # Build channel name to filename mapping from OME metadata
+                self._companion_channel_to_file = self._parse_companion_channel_mapping(
+                    tif.ome_metadata
+                )
+                self._print(
+                    f"Detected Xenium-style OME-TIFF companion files. "
+                    f"Found {len(self._companion_channel_to_file)} channels with UUID references. "
+                )
+                return True
+            else:
+                self._print(
+                    f"Detected single-page OME-TIFF channel files. "
+                    f"Each file contains 1 page."
+                )
+                return False
+
+    def _parse_companion_channel_mapping(self, ome_metadata: str) -> dict:
+        """Parse OME metadata to build a mapping from channel names to filenames.
+
+        Args:
+            ome_metadata (str): OME-XML metadata string
+        Returns:
+            dict: mapping from channel name to filename
+        """
+        import re
+        
+        # Extract channel names from Channel elements
+        channel_pattern = r'<Channel[^>]*Name="([^"]+)"'
+        channel_names = re.findall(channel_pattern, ome_metadata)
+        
+        # Extract TiffData FirstC and UUID FileName pairs
+        tiffdata_pattern = r'<TiffData[^>]*FirstC="(\d+)"[^>]*>\s*<UUID FileName="([^"]+)"'
+        tiffdata_matches = re.findall(tiffdata_pattern, ome_metadata)
+        
+        # Build mapping: channel_name -> filename
+        channel_to_file = {}
+        for first_c, filename in tiffdata_matches:
+            idx = int(first_c)
+            if idx < len(channel_names):
+                channel_to_file[channel_names[idx]] = filename
+        
+        return channel_to_file
 
     def filter_channels(self, channels):
         """Filter channels based on include_channels
@@ -235,31 +353,19 @@ class MultiplexDataset():
             include_channels=self.include_channels, dataset_channels=self.channels
         )
         if not self.silent:
-            print("All inputs are valid")
+            self._print("All inputs are valid")
 
     def __len__(self):
         """Return the number of fovs in the dataset"""
         return len(self.fov_paths)
     
-    def is_multi_channel_tiff(self, fov_path: str):
-        """Check if fov is a multi-channel tiff
-
-        Args:
-            fov_path (str): path to fov
-        Returns:
-            bool: whether fov is multi-channel
-        """
-        multi_channel = False
-        if fov_path.lower().endswith(("ome.tif", "ome.tiff")):
-            self.img_reader = LazyOMETIFFReader(fov_path)
-            if len(self.img_reader.shape) > 2:
-                multi_channel = True
-        return multi_channel
-    
     def get_channels(self):
         """Get the channel names for the dataset"""
         if self.multi_channel:
             return self.img_reader.channels
+        elif self._is_companion_ome_tiff:
+            # For companion OME-TIFFs, use channel names from OME metadata
+            return list(self._companion_channel_to_file.keys())
         else:
             channels = [
                 channel.replace(self.suffix, "") for channel in os.listdir(self.fov_paths[0]) \
@@ -318,8 +424,17 @@ class MultiplexDataset():
         """
         idx = self.fovs.index(fov)
         fov_path = self.fov_paths[idx]
-        channel_path = os.path.join(fov_path, channel + self.suffix)
-        mplex_img = np.squeeze(io.imread(channel_path))
+        
+        # Use LazyOMETIFFReader for companion OME-TIFF files
+        if self._is_companion_ome_tiff:
+            # Look up the filename for this channel from the mapping
+            filename = self._companion_channel_to_file[channel]
+            channel_path = os.path.join(fov_path, filename)
+            reader = LazyOMETIFFReader(channel_path)
+            mplex_img = np.squeeze(reader.get_channel(channel))
+        else:
+            channel_path = os.path.join(fov_path, channel + self.suffix)
+            mplex_img = np.squeeze(io.imread(channel_path))
         return mplex_img
 
     def get_channel_stack(self, fov: str, channel: str):

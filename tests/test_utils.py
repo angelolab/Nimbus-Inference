@@ -581,3 +581,201 @@ def test_LmdbDataset():
             assert np.isin(groundtruth, [0, 1, 2]).all()
             assert np.isin(inst_mask, np.arange(16)).all()
             assert key in lmdb_dataset.keys
+
+
+def prepare_companion_ome_tif_data(
+        num_samples, temp_dir, selected_markers, random=False, std=1, shape=(256, 256),
+    ):
+    """Prepare Xenium-style companion OME-TIFF data where each channel file contains
+    a single page of image data but OME metadata references all channels via UUID."""
+    import tifffile
+    import uuid
+    
+    np.random.seed(42)
+    fov_paths = []
+    inst_paths = []
+    if isinstance(std, (int, float)) or len(std) != len(selected_markers):
+        std = [std] * len(selected_markers)
+    df_list = []
+    
+    for i in range(num_samples):
+        folder = os.path.join(temp_dir, f"fov_{i}")
+        os.makedirs(folder, exist_ok=True)
+        
+        # Generate UUIDs for each file
+        file_uuids = {marker: str(uuid.uuid4()) for marker in selected_markers}
+        filenames = {marker: f"{marker}.ome.tiff" for marker in selected_markers}
+        
+        # Create channel data for all markers
+        channels = {}
+        for j, (marker, s) in enumerate(zip(selected_markers, std)):
+            if random:
+                img = (np.random.rand(*shape) * s).astype(np.uint16)
+            else:
+                img = (np.ones(shape) * (j + 1)).astype(np.uint16)
+            channels[marker] = img
+            df_list.append(pd.DataFrame({
+                "fov": [f"fov_{i}"] * 15,
+                "channel": [marker] * 15,
+                "cell_id": np.arange(15) + 1,
+                "activity": np.random.randint(0, 2, 15),
+            }))
+        
+        # Build OME-XML with UUID references (companion file structure)
+        def build_companion_ome_xml(markers, filenames, file_uuids, shape):
+            channel_elements = ""
+            tiffdata_elements = ""
+            for j, marker in enumerate(markers):
+                channel_elements += f'''
+      <Channel ID="Channel:{j}" Name="{marker}" SamplesPerPixel="1"/>'''
+                tiffdata_elements += f'''
+      <TiffData FirstZ="0" FirstT="0" FirstC="{j}" PlaneCount="1">
+        <UUID FileName="{filenames[marker]}">urn:uuid:{file_uuids[marker]}</UUID>
+      </TiffData>'''
+            
+            ome_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<OME xmlns="http://www.openmicroscopy.org/Schemas/OME/2016-06">
+  <Image ID="Image:0">
+    <Pixels ID="Pixels:0" DimensionOrder="XYZCT" Type="uint16" SizeX="{shape[1]}" SizeY="{shape[0]}" SizeZ="1" SizeC="{len(markers)}" SizeT="1">{channel_elements}{tiffdata_elements}
+    </Pixels>
+  </Image>
+</OME>'''
+            return ome_xml
+        
+        ome_xml = build_companion_ome_xml(selected_markers, filenames, file_uuids, shape)
+        
+        # Write each marker as a separate single-page OME-TIFF with companion metadata
+        for marker in selected_markers:
+            sample_name = os.path.join(folder, filenames[marker])
+            tifffile.imwrite(
+                sample_name,
+                channels[marker],
+                description=ome_xml,
+                metadata=None,  # Use our custom OME-XML
+            )
+        
+        deepcell_dir = os.path.join(temp_dir, "deepcell_output")
+        os.makedirs(deepcell_dir, exist_ok=True)
+        inst_path = os.path.join(deepcell_dir, f"fov_{i}_whole_cell.tiff")
+        io.imsave(
+            inst_path, np.array(
+                [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]
+            ).repeat(shape[1] // 4, axis=1).repeat(shape[0] // 4, axis=0)
+        )
+        fov_paths.append(folder)
+        inst_paths.append(inst_path)
+    
+    groundtruth_df = pd.concat(df_list)
+    gt_path = os.path.join(temp_dir, "groundtruth_df.csv")
+    groundtruth_df.to_csv(gt_path, index=False)
+    return fov_paths, inst_paths
+
+
+def test_companion_ome_tiff_detection():
+    """Test that Xenium-style companion OME-TIFF folders are correctly detected."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        def segmentation_naming_convention(fov_path):
+            temp_dir_, fov_ = os.path.split(fov_path)
+            fov_ = fov_.split(".")[0]
+            return os.path.join(temp_dir_, "deepcell_output", fov_ + "_whole_cell.tiff")
+        
+        # Test companion OME-TIFF detection (multi-page files)
+        fov_paths, _ = prepare_companion_ome_tif_data(
+            num_samples=1, temp_dir=temp_dir, selected_markers=["CD4", "CD56"],
+            shape=(256, 256)
+        )
+        dataset = MultiplexDataset(
+            fov_paths, segmentation_naming_convention, suffix=".ome.tiff",
+            output_dir=temp_dir
+        )
+        # Check that companion OME-TIFF was detected
+        assert dataset._is_companion_ome_tiff == True
+        assert dataset.multi_channel == False  # FOV path is a folder, not OME-TIFF
+        assert set(dataset.channels) == {"CD4", "CD56"}
+
+
+def test_companion_ome_tiff_channel_reading():
+    """Test that channels are correctly read from Xenium-style companion OME-TIFF files."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        def segmentation_naming_convention(fov_path):
+            temp_dir_, fov_ = os.path.split(fov_path)
+            fov_ = fov_.split(".")[0]
+            return os.path.join(temp_dir_, "deepcell_output", fov_ + "_whole_cell.tiff")
+        
+        markers = ["CD4", "CD56", "CD8"]
+        fov_paths, _ = prepare_companion_ome_tif_data(
+            num_samples=1, temp_dir=temp_dir, selected_markers=markers,
+            shape=(256, 256), random=False
+        )
+        dataset = MultiplexDataset(
+            fov_paths, segmentation_naming_convention, suffix=".ome.tiff",
+            output_dir=temp_dir
+        )
+        
+        # Read each channel and verify we get the correct data
+        # In prepare_companion_ome_tif_data, each channel has value (j + 1) where j is index
+        for j, marker in enumerate(markers):
+            channel_data = dataset.get_channel("fov_0", marker)
+            assert channel_data.shape == (256, 256)
+            # Each channel should have a constant value of (j + 1)
+            expected_value = j + 1
+            assert np.allclose(channel_data, expected_value), \
+                f"Channel {marker} should have value {expected_value}, got {channel_data[0, 0]}"
+
+
+def test_single_page_ome_tiff_detection():
+    """Test that single-page OME-TIFF files are correctly detected (not companion)."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        def segmentation_naming_convention(fov_path):
+            temp_dir_, fov_ = os.path.split(fov_path)
+            return os.path.join(temp_dir_, "deepcell_output", fov_ + "_whole_cell.tiff")
+        
+        # Create single-page OME-TIFF files (each file has only 1 channel)
+        markers = ["CD4", "CD56"]
+        shape = (256, 256)
+        folder = os.path.join(temp_dir, "fov_0")
+        os.makedirs(folder, exist_ok=True)
+        
+        for j, marker in enumerate(markers):
+            # OMETIFFWriter requires at least 3D array, so use (1, H, W)
+            img = np.ones((1, *shape)) * (j + 1)
+            metadata_dict = {
+                "SizeX": shape[0],
+                "SizeY": shape[1],
+                "SizeC": 1,
+                "PhysicalSizeX": 0.5,
+                "PhysicalSizeXUnit": "µm",
+                "PhysicalSizeY": 0.5,
+                "PhysicalSizeYUnit": "µm",
+                "Channels": {
+                    marker: {"Name": marker, "ID": "0", "SamplesPerPixel": 1}
+                }
+            }
+            sample_name = os.path.join(folder, f"{marker}.ome.tiff")
+            writer = OMETIFFWriter(
+                fpath=sample_name,
+                dimension_order="CYX",
+                array=img,
+                metadata=metadata_dict,
+                explicit_tiffdata=False
+            )
+            writer.write()
+        
+        # Create segmentation
+        deepcell_dir = os.path.join(temp_dir, "deepcell_output")
+        os.makedirs(deepcell_dir, exist_ok=True)
+        inst_path = os.path.join(deepcell_dir, "fov_0_whole_cell.tiff")
+        io.imsave(
+            inst_path, np.array(
+                [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]
+            ).repeat(64, axis=1).repeat(64, axis=0)
+        )
+        
+        dataset = MultiplexDataset(
+            [folder], segmentation_naming_convention, suffix=".ome.tiff",
+            output_dir=temp_dir
+        )
+        # Check that this is NOT detected as companion OME-TIFF
+        assert dataset._is_companion_ome_tiff == False
+        assert dataset.multi_channel == False
+        assert set(dataset.channels) == {"CD4", "CD56"}
