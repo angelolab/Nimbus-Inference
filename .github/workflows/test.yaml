@@ -1,6 +1,6 @@
 name: Test
 
-on:
+on: 
   workflow_call:
 
 permissions:
@@ -16,14 +16,14 @@ jobs:
         python-version: ["3.9", "3.10", "3.11"]
         os: [ubuntu-latest, macos-latest, windows-latest]
 
-    steps:
+    steps: 
       - name: Checkout ${{ github.repository }}
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+      - name:  Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache-dependency-path: "**/pyproject.toml"
@@ -37,7 +37,7 @@ jobs:
         run: |
           python -m pytest
 
-      - name: Archive Coverage
+      - name:  Archive Coverage
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ join(matrix.*, '-') }}
