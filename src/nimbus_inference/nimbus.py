@@ -82,11 +82,14 @@ class Nimbus(nn.Module):
                 , with "cpu" as a fallback), "cpu", "cuda", or "mps". Defaults to "auto".
             checkpoint: which checkpoint to use for the model, either "latest" or one of the local
                 checkpoints.
+            compile_model (bool): Whether to use torch.compile() for faster inference.
+            mixed_precision (bool): Whether to use mixed precision (FP16) inference.
     """
     def __init__(
         self, dataset: MultiplexDataset, output_dir: str, save_predictions: bool=True,
         batch_size: int=4, test_time_aug: bool=True, model_magnification: int=10,
-        input_shape: list=[1024, 1024], device: str="auto",  checkpoint="latest"
+        input_shape: list=[1024, 1024], device: str="auto", checkpoint="latest",
+        compile_model: bool=False, mixed_precision: bool=False
     ):
         super(Nimbus, self).__init__()
         self.dataset = dataset
@@ -98,6 +101,8 @@ class Nimbus(nn.Module):
         self.test_time_aug = test_time_aug
         self.input_shape = input_shape
         self.checkpoint = checkpoint
+        self.compile_model = compile_model
+        self.mixed_precision = mixed_precision
         if self.output_dir != "":
             os.makedirs(self.output_dir, exist_ok=True)
 
@@ -159,6 +164,12 @@ class Nimbus(nn.Module):
         model.load_state_dict(torch.load(self.checkpoint_path))
         print(f"Loaded weights from {self.checkpoint_path}")
         self.model = model.to(self.device).eval()
+        
+        # Apply torch.compile() if enabled
+        if self.compile_model:
+            print("Compiling model with torch.compile()...")
+            self.model = torch.compile(self.model, mode="reduce-overhead")
+            print("Model compiled successfully.")
 
     def load_latest_checkpoint(self, padding="reflect"):
         """Initializes the model and loads the latest weights from Hugging Face Hub if newer
@@ -226,6 +237,12 @@ class Nimbus(nn.Module):
         model.load_state_dict(torch.load(self.checkpoint_path))
         print(f"Loaded weights from {self.checkpoint_path}")
         self.model = model.to(self.device).eval()
+        
+        # Apply torch.compile() if enabled
+        if self.compile_model:
+            print("Compiling model with torch.compile()...")
+            self.model = torch.compile(self.model, mode="reduce-overhead")
+            print("Model compiled successfully.")
 
     def load_checkpoint(self, padding="reflect"):
         """Loads the model checkpoint.
@@ -276,7 +293,12 @@ class Nimbus(nn.Module):
                 if not isinstance(input_data, torch.Tensor):
                     input_data = torch.tensor(input_data).float()
                 input_data = input_data.to(self.device)
-                prediction = self.model(input_data)
+                # Use mixed precision (FP16) on CUDA if enabled
+                if self.mixed_precision:
+                    with torch.autocast(device_type=self.device.type, dtype=torch.float16):
+                        prediction = self.model(input_data)
+                else:
+                    prediction = self.model(input_data)
                 prediction = prediction.cpu()
         else:
             if not hasattr(self, "model") or self.model.padding != "valid":
@@ -316,7 +338,12 @@ class Nimbus(nn.Module):
             batch = torch.from_numpy(tiled_input[i : i + self.batch_size]).float()
             batch = batch.to(self.device)
             with torch.no_grad():
-                pred = self.model(batch).cpu().numpy()
+                # Use mixed precision (FP16) on CUDA if enabled
+                if self.mixed_precision:
+                    with torch.autocast(device_type=self.device.type, dtype=torch.float16):
+                        pred = self.model(batch).cpu().numpy()
+                else:
+                    pred = self.model(batch).cpu().numpy()
                 # crop pred
                 if self.crop_by.any():
                     pred = pred[

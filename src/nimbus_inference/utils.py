@@ -449,8 +449,10 @@ class MultiplexDataset():
         """
         idx = self.fovs.index(fov)
         fov_path = self.fov_paths[idx]
-        self.img_reader = LazyOMETIFFReader(fov_path)
-        return np.squeeze(self.img_reader.get_channel(channel))
+        # Cache the reader to avoid recreating it for each channel access
+        if not hasattr(self, '_reader_cache') or self._reader_cache[0] != fov_path:
+            self._reader_cache = (fov_path, LazyOMETIFFReader(fov_path))
+        return np.squeeze(self._reader_cache[1].get_channel(channel))
     
     def get_segmentation(self, fov: str):
         """Get the instance mask for a fov
@@ -500,18 +502,39 @@ class MultiplexDataset():
                 n_jobs
             )
 
-def prepare_input_data(mplex_img, instance_mask):
-    """Prepares the input data for the segmentation model
+def prepare_binary_mask(instance_mask):
+    """Prepares the binary mask from the instance mask. Can be cached per FOV.
+
+    Args:
+        instance_mask (np.array): instance mask
+    Returns:
+        np.array: binary mask (1 where cells are, 0 at boundaries and background)
+    """
+    edge = find_boundaries(instance_mask, mode="inner").astype(np.uint8)
+    binary_mask = np.logical_and(edge == 0, instance_mask > 0).astype(np.float32)
+    return binary_mask
+
+
+def prepare_input_data(mplex_img, instance_mask=None, binary_mask=None):
+    """Prepares the input data for the segmentation model.
+
+    Either instance_mask or binary_mask must be provided. If binary_mask is provided,
+    it will be used directly (faster for processing multiple channels from the same FOV).
+    If only instance_mask is provided, the binary_mask will be computed from it.
 
     Args:
         mplex_img (np.array): multiplex image
-        instance_mask (np.array): instance mask
+        instance_mask (np.array, optional): instance mask (used to compute binary_mask if 
+            binary_mask is not provided)
+        binary_mask (np.array, optional): pre-computed binary mask from prepare_binary_mask()
     Returns:
         np.array: input data for segmentation model
     """
+    if binary_mask is None:
+        if instance_mask is None:
+            raise ValueError("Either instance_mask or binary_mask must be provided")
+        binary_mask = prepare_binary_mask(instance_mask)
     mplex_img = mplex_img.astype(np.float32)
-    edge = find_boundaries(instance_mask, mode="inner").astype(np.uint8)
-    binary_mask = np.logical_and(edge == 0, instance_mask > 0).astype(np.float32)
     input_data = np.stack([mplex_img, binary_mask], axis=0)[np.newaxis,...] # bhwc
     return input_data
 
@@ -606,18 +629,24 @@ def predict_fovs(
         )
         df_fov = pd.DataFrame()
         instance_mask = dataset.get_segmentation(fov)
+        # Cache binary mask for this FOV (avoids recomputing find_boundaries for each channel)
+        binary_mask = prepare_binary_mask(instance_mask)
+        # Pre-compute scaled binary mask if magnification differs
+        if dataset.magnification != nimbus.model_magnification:
+            scale = nimbus.model_magnification / dataset.magnification
+            h, w = binary_mask.shape
+            scaled_h, scaled_w = int(h * scale), int(w * scale)
+            binary_mask_scaled = cv2.resize(binary_mask, [scaled_w, scaled_h], interpolation=0)
+        else:
+            binary_mask_scaled = None
         for channel_name in tqdm(dataset.channels):
             mplex_img = dataset.get_channel_normalized(fov, channel_name)
-            input_data = prepare_input_data(mplex_img, instance_mask)
             if dataset.magnification != nimbus.model_magnification:
-                scale = nimbus.model_magnification / dataset.magnification
-                input_data = np.squeeze(input_data)
-                _, h,w = input_data.shape
-                img = cv2.resize(input_data[0], [int(w*scale), int(h*scale)])
-                binary_mask = cv2.resize(
-                    input_data[1], [int(w*scale), int(h*scale)], interpolation=0
-                )
-                input_data = np.stack([img, binary_mask], axis=0)[np.newaxis,...]
+                h, w = mplex_img.shape
+                img_scaled = cv2.resize(mplex_img, [scaled_w, scaled_h])
+                input_data = prepare_input_data(img_scaled, binary_mask=binary_mask_scaled)
+            else:
+                input_data = prepare_input_data(mplex_img, binary_mask=binary_mask)
             if test_time_augmentation:
                 prediction = test_time_aug(
                     input_data, channel_name, nimbus, dataset.normalization_dict,
