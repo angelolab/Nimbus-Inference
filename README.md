@@ -41,6 +41,9 @@ We provide three Jupyter notebooks (in the `templates` folder), each with its ow
    - Lets you interactively explore the Nimbus Gold Standard labeled dataset.  
    - [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://drive.google.com/file/d/1LW0vHC3sKKA3TyvW_9FeIaHj3PonzhGS/view?usp=sharing)
 
+- **[4_Generic_Cell_Clustering.ipynb](https://github.com/angelolab/Nimbus-Inference/blob/main/templates/4_Generic_Cell_Clustering.ipynb)**  
+   - Performs cell phenotyping using SOM (Self-Organizing Map) and consensus clustering on Nimbus predictions. Takes the cell table output from `1_Nimbus_Predict.ipynb` and clusters cells based on marker expression, enabling downstream analysis and visualization of cell populations.
+
 Each notebook loads an example dataset directly from the Hugging Face Hub, so you can get hands-on with Nimbus right away.
 
 ---
@@ -66,7 +69,7 @@ Nimbus is a deep learning model designed to make **human-like, visual classifica
 - Generalizes across many tissue types, imaging platforms, and markers — without retraining.
 - Can be integrated into downstream clustering or phenotyping pipelines to improve accuracy.
 
-For more details, please see our [preprint](https://pmc.ncbi.nlm.nih.gov/articles/PMC11185540/).
+For more details, please see our [publication](https://www.nature.com/articles/s41592-025-02826-9).
 
 ---
 
