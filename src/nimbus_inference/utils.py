@@ -551,7 +551,7 @@ def segment_mean(instance_mask, prediction):
     """
     props_df = regionprops_table(
         label_image=instance_mask.astype(np.int32), intensity_image=prediction,
-        properties=['label' , 'centroid', 'intensity_mean']
+        properties=['label' , 'centroid', 'area', 'intensity_mean']
     )
     return props_df
 
@@ -663,6 +663,9 @@ def predict_fovs(
             if df_fov.empty:
                 df_fov["label"] = df["label"]
                 df_fov["fov"] = os.path.basename(fov_path)
+                df_fov["centroid_x"] = df["centroid-1"]
+                df_fov["centroid_y"] = df["centroid-0"]
+                df_fov["area"] = df["area"]
             df_fov[channel_name] = df["intensity_mean"]
             if save_predictions:
                 os.makedirs(out_fov_path, exist_ok=True)
