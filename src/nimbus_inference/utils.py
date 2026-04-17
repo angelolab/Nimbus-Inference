@@ -663,8 +663,8 @@ def predict_fovs(
             if df_fov.empty:
                 df_fov["label"] = df["label"]
                 df_fov["fov"] = os.path.basename(fov_path)
-                df_fov["centroid_x"] = df["centroid-1"]
-                df_fov["centroid_y"] = df["centroid-0"]
+                df_fov["centroid_x"] = df["centroid-1"]  # column dimension
+                df_fov["centroid_y"] = df["centroid-0"]  # row dimension
                 df_fov["area"] = df["area"]
             df_fov[channel_name] = df["intensity_mean"]
             if save_predictions:
