@@ -300,7 +300,7 @@ def test_predict_fovs():
         assert len(cell_table) == 15
         # check if we get the correct columns (fov, label, CD4, CD56)
         assert np.alltrue(
-            set(cell_table.columns) == set(["fov", "label", "CD4", "CD56"])
+            set(cell_table.columns) == set(["fov", "label", "centroid_x", "centroid_y", "area", "CD4", "CD56"])
         )
         # check if predictions don't get written to output_dir
         assert not os.path.exists(os.path.join(output_dir, "fov_0", "CD4.tiff"))
@@ -332,7 +332,7 @@ def test_predict_fovs():
         assert len(cell_table) == 15
         # check if we get the correct columns (fov, label, CD4, CD56)
         assert np.alltrue(
-            set(cell_table.columns) == set(["fov", "label", "CD4", "CD56"])
+            set(cell_table.columns) == set(["fov", "label", "centroid_x", "centroid_y", "area", "CD4", "CD56"])
         )
 
 
