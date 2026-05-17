@@ -403,5 +403,8 @@ class Nimbus(nn.Module):
                 for b_ in range(b):
                     stitched[b_, :, i * h : (i + 1) * h, j * w : (j + 1) * w] = tiles[i, j, b_]
         # remove padding
-        stitched = stitched[:, :, padding[0] : -padding[1], padding[2] : -padding[3]]
+        h_end = None if padding[1] == 0 else -padding[1]
+        w_end = None if padding[3] == 0 else -padding[3]
+
+        stitched = stitched[:, :, padding[0]:h_end, padding[2]:w_end]
         return stitched
