@@ -63,6 +63,19 @@ def test_tile_input():
     assert tiled_input.shape == (3,3,1,2,512,512)
     assert padding == [192, 192, 192, 192]
 
+def test_stitch_tiles_handles_zero_end_padding():
+    nimbus = Nimbus(dataset="", output_dir="")
+
+    # Shape: h_t, w_t, batch, channels, h, w
+    tiles = np.ones((1, 1, 1, 1, 10, 10))
+
+    # bottom and right padding are zero.
+    # Old slicing uses -0, which becomes 0 and collapses dimensions.
+    padding = [2, 0, 3, 0]
+
+    stitched = nimbus._stitch_tiles(tiles, padding)
+
+    assert stitched.shape == (1, 1, 8, 7)
 
 def test_tile_and_stitch():
     # tests _tile_and_stitch which chains _tile_input, model.forward and _stitch_tiles 
